@@ -1,353 +1,12 @@
-<?php require_once ('header.php');
+<?php
+require_once('header.php');
+require_once __DIR__ . '/includes/ref_cache.php';
+require_once __DIR__ . '/includes/audit.php';
+require_once __DIR__ . '/includes/flash.php';
+require_once __DIR__ . '/includes/pax_helpers.php';
 
-
-$status = $pdo->prepare('select * from `ct_statusinvoice`');
-$status->execute();
-$contaCorrente = $pdo->prepare('SELECT * FROM `ct_currentaccount` order by `name`');
-$contaCorrente->execute();
-
-$status2 = $pdo->prepare('select * from `ct_statusinvoice`');
-$status2->execute();
-$contaCorrente2 = $pdo->prepare('SELECT * FROM `ct_currentaccount`');
-$contaCorrente2->execute();
-
-if( isset( $_POST['numberVoucher'] ) )
-{
-        $financeiroReserva = $pdo->prepare(
-        'SELECT valuecredit as credito, datacredit as datapagamento FROM `ct_createfaturacredit` where numbervoucher = :voucher ');
-        $financeiroReserva->execute(array(":voucher" => $_POST['numberVoucher']));
-        $contadorFinanceiro = $financeiroReserva->rowCount();
-
-        $data_one_value = $pdo->prepare(
-            'select r.id,r.valueservice * r.qtdpax + r.valueservice / 2 * r.qtdchild as total from `ct_reserva` r where r.numbervoucher = :voucher');
-        $data_one_value->execute(array(":voucher" => $_POST['numberVoucher'] ));
-        $register_data_one_value = $data_one_value->fetch(PDO::FETCH_ASSOC);
-
-        $data_two_value = $pdo->prepare(
-            'select sum(ra.valueservice * ra.qpax + ra.valueservice / 2 * ra.qchild) as totaltwo from `ct_recentlyadd` ra where ra.idrecently =  :id');
-        $data_two_value->execute(array(":id" => $register_data_one_value['id'] ));
-        $register_data_two_value = $data_two_value->fetch(PDO::FETCH_ASSOC);
-
-
-}
-
-if (isset( $_POST['salvar'] ))
-{
-    $valorPago = $pdo->prepare(
-        'SELECT SUM(valuecredit) as credito FROM `ct_createfaturacredit` where numbervoucher = :voucher');
-    $valorPago->execute( array(":voucher" => $_POST['numberVoucher']) );
-    $registroPago = $valorPago->fetch(PDO::FETCH_ASSOC);
-
-    $dadosReserva = $pdo->prepare(
-        "SELECT * FROM `ct_reserva` where `numbervoucher` = :numbervoucher");
-    $dadosReserva->execute( array(":numbervoucher" => $_POST['numberVoucher'] ));
-    $dadosGerais = $dadosReserva->fetch(PDO::FETCH_ASSOC);
-    $contador = $dadosReserva->rowCount();
-    if($contador > 0)
-    {
-        $adicionais = $pdo->prepare(
-            'SELECT * FROM `ct_recentlyadd` r where r.idrecently = :id');
-        $adicionais->execute(array(":id" => $dadosGerais['id'] ) );
-        $dadosGerais2  = $adicionais->fetch(PDO::FETCH_ASSOC);
-
-        $total1 =  ( $dadosGerais['valueservice'] * $dadosGerais['qtdpax'] ) + (  ($dadosGerais['valueservice'] / 2 ) * $dadosGerais['qtdchild'] );
-        $total2 =  ( $dadosGerais2['valueservice'] * $dadosGerais2['qpax'] ) + (  ($dadosGerais2['valueservice'] / 2 ) * $dadosGerais2['qchild'] );
-        if( $registroPago['credito'] >= ( $total1 + $total2 ) )
-        {
-            $statusEscolhido = $_POST['statusescolhido'];
-
-        }else{
-            if($_POST['statusescolhido'] == 2)
-            {
-                $statusEscolhido = $_POST['statusescolhido'];
-            }else{
-                $statusEscolhido = 4;
-            }
-
-        }
-        $voucher         = $_POST['numberVoucher'];
-        $contaC          = $_POST['ccfp'];
-        $dataVencimento  = $_POST['datavencimento'];
-        $dataPagamento   = $_POST['datapagamento'];
-        $numeracao       = $_POST['numeracao'];
-
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatusinvoice` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => $statusEscolhido,
-            ":voucher"  => $voucher
-
-        ) );
-
-        if( $statusEscolhido == 2 )
-        {
-            $atualizarStatus = $pdo->prepare(
-                'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-            $atualizarStatus->execute( array(
-                ":sinvoice" => $statusEscolhido,
-                ":voucher"  => $voucher
-
-            ) );
-            $auditoria = $pdo->prepare(
-                'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-            $auditoria->execute( array(
-                ":resp"    => $_SESSION['id'],
-                ":voucher" => $voucher,
-                ":des"     => "Status Atualizado Para CANCELADO",
-                ":dataa"   => date("Y-m-d H:i:s" )) );
-            cacelarVoucher($voucher);
-        }
-        elseif ($statusEscolhido == 13)
-        {
-            cacelarVoucher($voucher);
-        }
-        elseif( $statusEscolhido == 3 )
-        {
-            $atualizarStatus = $pdo->prepare(
-                'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-            $atualizarStatus->execute( array(
-                ":sinvoice" => 1,
-                ":voucher"  => $voucher
-            ) );
-            $auditoria = $pdo->prepare(
-                'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-            $auditoria->execute( array(
-                ":resp"    => $_SESSION['id'],
-                ":voucher" => $voucher,
-                ":des"     => "Status Atualizado Para PAGO",
-                ":dataa"   => date("Y-m-d H:i:s" )) );
-        }
-        elseif( $statusEscolhido == 4 )
-        {
-            $atualizarStatus = $pdo->prepare(
-                'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-            $atualizarStatus->execute( array(
-                ":sinvoice" => 3,
-                ":voucher"  => $voucher
-            ) );
-            $auditoria = $pdo->prepare(
-                'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-            $auditoria->execute( array(
-                ":resp"    => $_SESSION['id'],
-                ":voucher" => $voucher,
-                ":des"     => "Status Atualizado Para PARCIAL",
-                ":dataa"   => date("Y-m-d H:i:s" )) );
-        }
-        elseif( $statusEscolhido == 8 )
-        {
-            $atualizarStatus = $pdo->prepare(
-                'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-            $atualizarStatus->execute( array(
-                ":sinvoice" => 4,
-                ":voucher"  => $voucher
-            ) );
-            $auditoria = $pdo->prepare(
-                'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-            $auditoria->execute( array(
-                ":resp"    => $_SESSION['id'],
-                ":voucher" => $voucher,
-                ":des"     => "Status Atualizado Para REEMBOLSADO",
-                ":dataa"   => date("Y-m-d H:i:s" )) );
-        }
-
-
-        $buscarReservas = $pdo->prepare('select * from `ct_reserva` where numbervoucher = :voucher  ');
-        $buscarReservas->execute(
-            array(
-                ":voucher"  => $voucher
-            )
-        );
-        $registro = $buscarReservas->fetch( PDO::FETCH_ASSOC );
-
-
-        $salvarDados = $pdo->prepare(
-            'insert into `ct_createfatura` (`id`, `numbervoucher`, `datematurity`, `datepayment`, `numberadd`, `obervacao`, `idcurrentaccount`, `idcliente`)
-                       values (DEFAULT, :voucher, :vencimento, :pagamento, :numeracao, :observacao, :conta, :idcliente) ');
-        $salvarDados->execute( array(
-            ":voucher"    => $voucher,
-            ":vencimento" => $dataVencimento,
-            ":pagamento"  => $dataPagamento,
-            ":numeracao"  => $numeracao,
-            ":observacao" => ".",
-            ":conta"      => $contaC,
-            ":idcliente"  => $registro['idcliente']
-        ) );
-        $ultimoIdFatura = $pdo->lastInsertId();
-
-        $auditoria = $pdo->prepare(
-            'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-        $auditoria->execute( array(
-            ":resp"    => $_SESSION['id'],
-            ":voucher" => $voucher,
-            ":des"     => "Fatura Cadastrada ".$numeracao,
-            ":dataa"   => date("Y-m-d H:i:s" )) );
-
-        $administrativo = $pdo->prepare(
-            'select c.id, c.datematurity, c.datepayment, c.numberadd, cc.name from `ct_createfatura` 
-                      c left join ct_currentaccount cc on cc.id = c.idcurrentaccount where numbervoucher = :voucher');
-        $administrativo->execute(array(":voucher" => $voucher));
-        $contadorAdm = $administrativo->rowCount();
-
-        $buscaid_voucher = $pdo->prepare('select * from `ct_caixa` where nome like :voucheer ');
-        $buscaid_voucher->execute(array(":voucheer" => "%".$voucher));
-        $dados_buscaid = $buscaid_voucher->fetch(PDO::FETCH_ASSOC);
-
-        $ststus_credito_voucher_caixa = $pdo->prepare(
-            'update `ct_caixa` set `idstatus` = :sinvoice, `descricao` = :descricao where id = :voucher');
-        $ststus_credito_voucher_caixa->execute(array(":sinvoice" => $statusEscolhido, ":descricao" => $numeracao ,":voucher" => $dados_buscaid['id'] ));
-
-        echo("<div class='alert alert-success' role='alert'>Fatura Cadastradas</div>");
-    }
-
-}
-if( isset($_POST['atualizar']) )
-{
-    $voucher = $_POST['voucher'];
-    $valorPago = $pdo->prepare(
-        'SELECT SUM(valuecredit) as credito FROM `ct_createfaturacredit` where numbervoucher = :voucher');
-    $valorPago->execute( array(":voucher" => $_POST['voucher']) );
-    $registroPago = $valorPago->fetch(PDO::FETCH_ASSOC);
-
-    $dadosReserva = $pdo->prepare(
-        "SELECT * FROM `ct_reserva` where `numbervoucher` = :numbervoucher");
-    $dadosReserva->execute( array(":numbervoucher" => $_POST['voucher'] ));
-    $dadosGerais = $dadosReserva->fetch(PDO::FETCH_ASSOC);
-
-    $adicionais = $pdo->prepare(
-        'SELECT * FROM `ct_recentlyadd` ra where ra.idrecently = :id');
-    $adicionais->execute(array(":id" => $dadosGerais['id'] ) );
-    $dadosGerais2  = $adicionais->fetch(PDO::FETCH_ASSOC);
-
-    $total1 =  ( $dadosGerais['valueservice'] * $dadosGerais['qtdpax'] ) + (  ($dadosGerais['valueservice'] / 2 ) * $dadosGerais['qtdchild'] );
-    $total2 =  ( $dadosGerais2['valueservice'] * $dadosGerais2['qpax'] ) + (  ($dadosGerais2['valueservice'] / 2 ) * $dadosGerais2['qchild'] );
-
-    if( $registroPago['credito'] >= ( $total1 + $total2 ) )
-    {
-        $statusEscolhido = $_POST['novostatus'];
-
-    }else{
-        if( $_POST['novostatus'] == 2 )
-        {
-            $statusEscolhido = $_POST['novostatus'];
-        }else{
-            $statusEscolhido = 4;
-        }
-
-    }
-
-
-    $atualizarStatus = $pdo->prepare(
-        'update `ct_reserva` set `idstatusinvoice` = :sinvoice where numbervoucher = :voucher ');
-    $atualizarStatus->execute( array(
-        ":sinvoice" => $statusEscolhido,
-        ":voucher"  => $_POST['voucher']
-
-    ) );
-
-    if( $statusEscolhido == 2 )
-    {
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" =>  $statusEscolhido,
-            ":voucher"  =>  $_POST['voucher']
-
-        ) );
-        $auditoria = $pdo->prepare(
-            'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-        $auditoria->execute( array(
-            ":resp"    => $_SESSION['id'],
-            ":voucher" => $voucher,
-            ":des"     => "Status Atualizado Para CANCELADO",
-            ":dataa"   => date("Y-m-d H:i:s" )) );
-        cacelarVoucher($voucher);
-    }
-    elseif ($statusEscolhido == 13)
-    {
-        cacelarVoucher($voucher);
-    }
-    elseif(  $statusEscolhido == 3 )
-    {
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => 1,
-            ":voucher"  => $_POST['voucher']
-        ) );
-        $auditoria = $pdo->prepare(
-            'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-        $auditoria->execute( array(
-            ":resp"    => $_SESSION['id'],
-            ":voucher" => $voucher,
-            ":des"     => "Status Atualizado Para PAGO",
-            ":dataa"   => date("Y-m-d H:i:s" )) );
-    }
-    elseif(  $statusEscolhido == 4 )
-    {
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => 3,
-            ":voucher"  => $_POST['voucher']
-        ) );
-        $auditoria = $pdo->prepare(
-            'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-        $auditoria->execute( array(
-            ":resp"    => $_SESSION['id'],
-            ":voucher" => $voucher,
-            ":des"     => "Status Atualizado Para PARCIAL",
-            ":dataa"   => date("Y-m-d H:i:s" )) );
-    }
-    elseif(  $statusEscolhido == 8 )
-    {
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatus` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => 5,
-            ":voucher"  => $_POST['voucher']
-        ) );
-        $auditoria = $pdo->prepare(
-            'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-        $auditoria->execute( array(
-            ":resp"    => $_SESSION['id'],
-            ":voucher" => $voucher,
-            ":des"     => "Status Atualizado Para REEMBOLSADO",
-            ":dataa"   => date("Y-m-d H:i:s" )) );
-    }
-
-    $status = $pdo->prepare('select * from `ct_statusinvoice` where id = :id');
-    $status->execute( array(":id" => $statusEscolhido) );
-    $newStatus = $status->fetch(PDO::FETCH_ASSOC);
-
-    $contaCorrente = $pdo->prepare('SELECT * FROM `ct_currentaccount` where `id` = :id');
-    $contaCorrente->execute( array(":id" =>$_POST['formapagamento']) );
-    $newconta = $contaCorrente->fetch(PDO::FETCH_ASSOC);
-
-    $updateFatura = $pdo->prepare(
-            'update `ct_createfatura` set `datematurity` = :venci, `datepayment` = :pagamento, `numbervoucher` = :voucher,
-                      `numberadd` = :numeracao, `idcurrentaccount` = :conta where `id` = :id '
-    );
-    $updateFatura->execute(
-            array(
-                    ":venci"      => $_POST['vencimento'],
-                    ":pagamento"  => $_POST['pagamento'],
-                    ":voucher"    => $_POST['voucher'],
-                    ":numeracao"  => $_POST['info'],
-                    ":conta"      => $_POST['formapagamento'],
-                    ":id"         => $_POST['id']
-            )
-    );
-    $auditoria = $pdo->prepare(
-        'insert into `ct_audit` (`id`, `idresponsible`, `voucher`, `description`, `date`) values (DEFAULT, :resp, :voucher, :des, :dataa) ');
-    $auditoria->execute( array(
-        ":resp"    => $_SESSION['id'],
-        ":voucher" => $_POST['voucher'],
-        ":des"     => "Fatura Atualizada ".$_POST['info'],
-        ":dataa"   => date("Y-m-d H:i:s" )) );
-    echo("<div class='alert alert-primary' role='alert'>Fatura Atualizada</div>");
-
-}
-function cacelarVoucher($voucher)
+// ── legacy cancel helper ──────────────────────────────────────────────────────
+function cacelarVoucher(string $voucher): void
 {
     require_once('class/Cliente.php');
     $cliente = new Cliente();
@@ -358,285 +17,485 @@ function cacelarVoucher($voucher)
     $cliente->setIdCliente($dados[0]['cassiturismo_cliente_idcliente']);
     $cliente->atualizarClientePorRevendedorAtravesDoSistema();
 }
+
+// ── resolve invoice status with paid-vs-total guard ──────────────────────────
+function resolveStatusInvoice(PDO $pdo, string $voucher, int $solicitado): int
+{
+    $st = $pdo->prepare(
+        'SELECT r.valueservice, r.qtdpax, r.qtdchild,
+                COALESCE((SELECT SUM(ra.valueservice * ra.qpax + ra.valueservice / 2 * ra.qchild)
+                           FROM ct_recentlyadd ra WHERE ra.idrecently = r.id), 0) AS totaladd,
+                COALESCE((SELECT SUM(valuecredit) FROM ct_createfaturacredit
+                           WHERE numbervoucher = :v2), 0) AS totalpago
+         FROM ct_reserva r WHERE r.numbervoucher = :v'
+    );
+    $st->execute([':v' => $voucher, ':v2' => $voucher]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) { return $solicitado; }
+
+    $totalServico = ($row['valueservice'] * $row['qtdpax'])
+                  + ($row['valueservice'] / 2 * $row['qtdchild'])
+                  + (float) $row['totaladd'];
+    $totalPago    = (float) $row['totalpago'];
+
+    if ($totalPago >= $totalServico) { return $solicitado; }
+    return ($solicitado === 2) ? 2 : 4;
+}
+
+// ── apply invoice + reservation status, audit ────────────────────────────────
+function aplicarStatus(PDO $pdo, string $voucher, int $status): void
+{
+    $pdo->prepare('UPDATE ct_reserva SET idstatusinvoice = :s WHERE numbervoucher = :v')
+        ->execute([':s' => $status, ':v' => $voucher]);
+
+    $idstatusMap = [2 => 2, 3 => 1, 4 => 3, 8 => 4];
+    $descMap     = [2 => 'CANCELADO', 3 => 'PAGO', 4 => 'PARCIAL', 8 => 'REEMBOLSADO'];
+
+    if (isset($idstatusMap[$status])) {
+        $pdo->prepare('UPDATE ct_reserva SET idstatus = :s WHERE numbervoucher = :v')
+            ->execute([':s' => $idstatusMap[$status], ':v' => $voucher]);
+        logAudit($pdo, $voucher, 'Status Atualizado Para ' . $descMap[$status]);
+    }
+
+    if ($status === 2 || $status === 13) {
+        cacelarVoucher($voucher);
+    }
+}
+
+// ── POST: busca voucher ───────────────────────────────────────────────────────
+if (isset($_POST['numberVoucher'])) {
+    header('location: statusvoucher?v=' . urlencode(trim($_POST['numberVoucher'])));
+    exit;
+}
+
+// ── POST: cadastrar fatura ────────────────────────────────────────────────────
+if (isset($_POST['salvar'])) {
+    $voucher         = trim($_POST['voucher']);
+    $statusEscolhido = resolveStatusInvoice($pdo, $voucher, (int)$_POST['statusescolhido']);
+    aplicarStatus($pdo, $voucher, $statusEscolhido);
+
+    $stIdCli = $pdo->prepare('SELECT idcliente FROM ct_reserva WHERE numbervoucher = :v');
+    $stIdCli->execute([':v' => $voucher]);
+    $idcliente = (int)($stIdCli->fetchColumn() ?? 0);
+
+    $pdo->prepare(
+        'INSERT INTO ct_createfatura (numbervoucher, datematurity, datepayment, numberadd, obervacao, idcurrentaccount, idcliente)
+         VALUES (:voucher, :venci, :pag, :num, :obs, :conta, :cliente)'
+    )->execute([
+        ':voucher'  => $voucher,
+        ':venci'    => $_POST['datavencimento'],
+        ':pag'      => $_POST['datapagamento'],
+        ':num'      => $_POST['numeracao'],
+        ':obs'      => '.',
+        ':conta'    => $_POST['ccfp'],
+        ':cliente'  => $idcliente,
+    ]);
+    logAudit($pdo, $voucher, 'Fatura Cadastrada ' . $_POST['numeracao']);
+
+    $cx = $pdo->prepare('SELECT id FROM ct_caixa WHERE nome LIKE :n LIMIT 1');
+    $cx->execute([':n' => '%' . $voucher]);
+    $cxId = $cx->fetchColumn();
+    if ($cxId) {
+        $pdo->prepare('UPDATE ct_caixa SET idstatus = :s, descricao = :d WHERE id = :id')
+            ->execute([':s' => $statusEscolhido, ':d' => $_POST['numeracao'], ':id' => $cxId]);
+    }
+
+    setFlash('success', 'Fatura cadastrada para o voucher ' . $voucher);
+    header('location: statusvoucher?v=' . urlencode($voucher));
+    exit;
+}
+
+// ── POST: atualizar fatura ────────────────────────────────────────────────────
+if (isset($_POST['atualizar'])) {
+    $voucher         = trim($_POST['voucher']);
+    $statusEscolhido = resolveStatusInvoice($pdo, $voucher, (int)$_POST['novostatus']);
+    aplicarStatus($pdo, $voucher, $statusEscolhido);
+
+    $pdo->prepare(
+        'UPDATE ct_createfatura SET datematurity = :venci, datepayment = :pag, numberadd = :num, idcurrentaccount = :conta WHERE id = :id'
+    )->execute([
+        ':venci' => $_POST['datavencimento'],
+        ':pag'   => $_POST['datapagamento'],
+        ':num'   => $_POST['numeracao'],
+        ':conta' => $_POST['formapagamento'],
+        ':id'    => (int)$_POST['idfatura'],
+    ]);
+    logAudit($pdo, $voucher, 'Fatura Atualizada ' . $_POST['numeracao']);
+
+    setFlash('success', 'Fatura atualizada para o voucher ' . $voucher);
+    header('location: statusvoucher?v=' . urlencode($voucher));
+    exit;
+}
+
+// ── page data ─────────────────────────────────────────────────────────────────
+$voucher     = trim($_GET['v'] ?? '');
+$dadosGerais = null;
+$pagamentos  = [];
+$faturas     = [];
+$totalServico = 0.0;
+$totalPago    = 0.0;
+
+if ($voucher !== '') {
+    $stRes = $pdo->prepare(
+        'SELECT r.*, s.fullname AS servico, c.namefantazia AS cliente,
+                u.firstname, u.lastname, si.nameinvoice AS statuu
+         FROM ct_reserva r
+         LEFT JOIN ct_servico s        ON s.id  = r.idservico
+         LEFT JOIN ct_cliente c        ON c.id  = r.idcliente
+         LEFT JOIN ct_usuario u        ON u.id  = r.idresponsavel
+         LEFT JOIN ct_statusinvoice si ON si.id = r.idstatusinvoice
+         WHERE r.numbervoucher = :v'
+    );
+    $stRes->execute([':v' => $voucher]);
+    $dadosGerais = $stRes->fetch(PDO::FETCH_ASSOC);
+
+    if ($dadosGerais) {
+        $totalServico = ($dadosGerais['valueservice'] * $dadosGerais['qtdpax'])
+                      + ($dadosGerais['valueservice'] / 2 * $dadosGerais['qtdchild']);
+
+        $stAdd = $pdo->prepare(
+            'SELECT COALESCE(SUM(valueservice * qpax + valueservice / 2 * qchild), 0) AS tot
+             FROM ct_recentlyadd WHERE idrecently = :id'
+        );
+        $stAdd->execute([':id' => $dadosGerais['id']]);
+        $totalServico += (float) $stAdd->fetchColumn();
+
+        $stPag = $pdo->prepare(
+            'SELECT cfc.datacredit, cfc.valuecredit, cc.name AS forma
+             FROM ct_createfaturacredit cfc
+             LEFT JOIN ct_currentaccount cc ON cc.id = cfc.idaccountcurrent
+             WHERE cfc.numbervoucher = :v ORDER BY cfc.datacredit'
+        );
+        $stPag->execute([':v' => $voucher]);
+        $pagamentos = $stPag->fetchAll(PDO::FETCH_ASSOC);
+        $totalPago  = (float) array_sum(array_column($pagamentos, 'valuecredit'));
+
+        $stFat = $pdo->prepare(
+            'SELECT f.id, f.datematurity, f.datepayment, f.numberadd, cc.name AS conta, f.idcurrentaccount
+             FROM ct_createfatura f
+             LEFT JOIN ct_currentaccount cc ON cc.id = f.idcurrentaccount
+             WHERE f.numbervoucher = :v ORDER BY f.id DESC'
+        );
+        $stFat->execute([':v' => $voucher]);
+        $faturas = $stFat->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+$statusList = refStatusInvoice($pdo);
+$contas     = $pdo->query('SELECT id, name FROM ct_currentaccount ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
+$flash      = getFlash();
 ?>
 <style>
-    .col-md-4{
-        margin-bottom: 20px;
-    }
+    .sv-page { background: #f4f7fb; min-height: calc(100vh - 70px); padding-bottom: 48px; }
+    .sv-page .containerrrr { width: 94%; max-width: 960px; margin: 0 auto; }
+    .sv-card { border: 0; border-radius: 20px; background: #fff; box-shadow: 0 18px 45px rgba(15,23,42,.08); overflow: hidden; margin-top: 20px; }
+    .sv-heading { background: linear-gradient(135deg,#1e4770,#256aa0); color: #fff; padding: 20px 28px; }
+    .sv-heading h3 { color: #fff; font-size: 20px; font-weight: 700; margin: 0; }
+    .sv-heading small { color: rgba(255,255,255,.75); font-size: 13px; }
+    .sv-body { padding: 24px 28px; }
+    .sv-info-pill { display: inline-block; background: #f1f5f9; border-radius: 8px; padding: 6px 14px;
+        font-size: 13px; color: #475569; margin: 0 6px 8px 0; }
+    .sv-info-pill strong { color: #1e293b; }
+    .sv-totals { display: flex; gap: 14px; flex-wrap: wrap; margin: 18px 0 24px; }
+    .sv-total-box { flex: 1; min-width: 140px; border-radius: 12px; padding: 16px 18px; }
+    .sv-total-box.servico  { background: #eff6ff; border: 1px solid #bfdbfe; }
+    .sv-total-box.pago     { background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .sv-total-box.saldo    { background: #fefce8; border: 1px solid #fde68a; }
+    .sv-total-box.negativo { background: #fef2f2; border: 1px solid #fecaca; }
+    .sv-total-box .label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; color: #64748b; }
+    .sv-total-box .value { font-size: 22px; font-weight: 800; margin-top: 4px; color: #1e293b; }
+    .sv-section-title { font-size: 14px; font-weight: 700; color: #1e4770; text-transform: uppercase;
+        letter-spacing: .5px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; margin: 26px 0 14px; }
+    .sv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .sv-table th { background: #f8fafc; color: #64748b; font-size: 11px; text-transform: uppercase;
+        letter-spacing: .5px; padding: 10px 14px; border-bottom: 2px solid #e5e7eb; text-align: left; }
+    .sv-table td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .sv-table tr:last-child td { border-bottom: 0; }
+    .sv-form-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
+    .sv-form-row .field { flex: 1; min-width: 160px; }
+    .sv-form-row label { font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 5px; display: block; }
+    .sv-form-row .form-control { border: 1px solid #dce3ec; border-radius: 10px; min-height: 40px; font-size: 13px; }
+    .sv-form-row .form-control:focus { border-color: #1e88d1; box-shadow: 0 0 0 3px rgba(30,136,209,.14); outline: none; }
+    .btn-sv-primary { background: #1e4770; color: #fff; border: 0; border-radius: 10px; font-weight: 700;
+        padding: 10px 26px; min-height: 42px; cursor: pointer; font-size: 14px; }
+    .btn-sv-primary:hover { background: #256aa0; }
+    .btn-sv-sm { font-size: 12px; padding: 4px 12px; border-radius: 6px; border: 1px solid #cbd5e1;
+        background: #f8fafc; color: #475569; cursor: pointer; }
+    .btn-sv-sm:hover { background: #e2e8f0; }
+    .badge-status { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge-pago    { background: #dcfce7; color: #166534; }
+    .badge-parcial { background: #fef9c3; color: #92400e; }
+    .badge-cancelado { background: #fee2e2; color: #991b1b; }
+    .badge-default { background: #f1f5f9; color: #475569; }
 </style>
-<!-- PAGE CONTENT-->
-<div class="page-content--bgf7">
-    <!-- BREADCRUMB-->
+
+<div class="page-content--bgf7 sv-page">
     <section class="au-breadcrumb2">
         <div class="container">
             <div class="row">
                 <div class="col-md-12">
-                    <div class="au-breadcrumb-content">
-                        <div class="au-breadcrumb-left">
-                            <span class="au-breadcrumb-span">Você está aqui:</span>
-                            <ul class="list-unstyled list-inline au-breadcrumb__list">
-                                <li class="list-inline-item active">
-                                    <a href="./index">Home</a>
-                                </li>
-                                <li class="list-inline-item seprate">
-                                    <span>/</span>
-                                </li>
-                                <li class="list-inline-item">Financeiro: Dar baixa</li>
-                            </ul>
-                        </div>
-                    </div>
+                    <ul class="list-unstyled list-inline au-breadcrumb__list" style="margin:0;padding:18px 0 10px">
+                        <li class="list-inline-item active"><a href="./index.php">Home</a></li>
+                        <li class="list-inline-item seprate"><span>/</span></li>
+                        <li class="list-inline-item">Financeiro: Dar Baixa</li>
+                    </ul>
                 </div>
             </div>
         </div>
     </section>
-    <div class="row">
-        <div id="status"></div>
-        <div class="">
-            <?php if($contador <= 0 and isset($_POST['numberVoucher'])){ ?>
-                <div class="alert alert-danger" role="alert">Não encontramos o voucher <?php echo($_POST['numberVoucher']) ?> .
-                    <a href="statusvoucher">Tentar novamente</a></div>
-            <?php } else { ?>
-                <div class="card">
-                    <div class="card-header">
-                        <div class="container-fluid">
-                            <h4>Atualizar Informações da Fatura:</h4>
-                        </div>
 
+    <div class="containerrrr">
+
+        <?php if ($flash): ?>
+            <div class="alert alert-<?= htmlspecialchars($flash['type']) ?> alert-dismissible fade show" role="alert" style="border-radius:12px;margin-top:16px">
+                <?= htmlspecialchars($flash['msg']) ?>
+                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+            </div>
+        <?php endif; ?>
+
+        <!-- Search card -->
+        <div class="sv-card">
+            <div class="sv-heading">
+                <h3>Financeiro: Dar Baixa</h3>
+                <small>Busque o voucher para registrar ou atualizar faturas</small>
+            </div>
+            <div class="sv-body">
+                <form method="post" style="max-width:340px">
+                    <label for="numberVoucher" style="font-size:12px;font-weight:700;color:#374151;margin-bottom:5px;display:block">Nº do Voucher</label>
+                    <div class="input-group">
+                        <input type="text" name="numberVoucher" id="numberVoucher" class="form-control" style="border-radius:10px 0 0 10px;border:1px solid #dce3ec;min-height:42px"
+                               value="<?= htmlspecialchars($voucher) ?>" placeholder="ex: 12345" autofocus>
+                        <div class="input-group-append">
+                            <button class="btn-sv-primary" type="submit" style="border-radius:0 10px 10px 0">Buscar</button>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="col-lg-12">
+                </form>
+            </div>
+        </div>
 
-                            <div class="">
-                                <form action="" method="post">
-                                    <div class="col-md-4 pull-left">
-                                        <strong><label for="statusescolhido">Status</label></strong>
-                                        <select class="form-control" name="statusescolhido" id="statusescolhido" required>
-                                            <option value="1">SELECIONE</option>
-                                            <?php while ( $dadosStatus = $status->fetch( PDO::FETCH_ASSOC ) ){ ?>
-                                                <option value="<?php echo($dadosStatus['id']); ?>" ><?php echo( utf8_encode( $dadosStatus['nameinvoice'])); ?></option>
-                                            <?php }?>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-4 pull-left">
-                                        <strong><label for="numberVoucher">Nº Voucher</label></strong>
-                                        <input type="text" name="numberVoucher" id="numberVoucher" class="form-control">
-                                    </div>
-                                    <div class="col-md-4 pull-right">
-                                        <strong><label for="ccfp">Forma de Pagamento</label></strong>
-                                        <select class="form-control" name="ccfp" id="ccfp" required>
-                                            <option value="1">SELECIONE</option>
-                                            <?php while ( $dadosConta = $contaCorrente->fetch( PDO::FETCH_ASSOC ) ){ ?>
-                                                <option value="<?php echo($dadosConta['id']); ?>" ><?php echo( utf8_encode( strtoupper( $dadosConta['name'] ) ) ); ?></option>
-                                            <?php }?>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-4 pull-left">
-                                        <strong><label for="datavencimento">Data Vencimento</label></strong>
-                                        <input type="date" class="form-control" name="datavencimento" id="datavencimento" value="<?php echo(date("Y-m-d")); ?>" >
-                                    </div>
-                                    <div class="col-md-4 pull-left">
-                                        <strong><label for="datapagamento">Data Pagamento</label></strong>
-                                        <input type="date" class="form-control" name="datapagamento" id="datapagamento" value="<?php echo(date("Y-m-d")); ?>" >
-                                    </div>
-                                    <div class="col-md-4 pull-right">
-                                        <strong><label for="numeracao">Númeração (Informações Adicionais)</label></strong>
-                                        <input type="text" class="form-control" value="Ok" name="numeracao" id="numeracao" >
-                                    </div>
-                                    <div class="container-fluid">
-                                        <button style="margin-bottom: 20px;" type="submit" class="btn btn-primary btn-block btn-lg" name="salvar" id="salvarfatura">
-                                            Salvar informações
-                                        </button>
-                                    </div>
+        <?php if ($voucher !== '' && $dadosGerais === null): ?>
+            <div class="alert alert-warning" style="margin-top:18px;border-radius:12px">
+                Voucher <strong><?= htmlspecialchars($voucher) ?></strong> não encontrado.
+                <a href="statusvoucher">Tentar novamente</a>
+            </div>
 
-                                </form>
-                                <br>
-                                <hr>
-                                <?php if( isset( $_POST['salvar'] ) and count($dadosGerais) > 0 ){ ?>
+        <?php elseif ($dadosGerais !== null):
+            $saldo = $totalServico - $totalPago;
+            $badgeClass = match(true) {
+                $saldo <= 0  => 'badge-pago',
+                $saldo < $totalServico => 'badge-parcial',
+                default => 'badge-default',
+            };
+        ?>
 
-                                    <div class="col-lg-12" style="margin-top: 40px;">
-                                        <div class="modal fade" id="exemplomodal" tabindex="-1" role="dialog" aria-labelledby="myLargeModalLabel">
-                                            <div class="modal-dialog modal-lg" role="document">
-                                                <div class="modal-content">
-                                                    <div class="modal-header">
-                                                        <h4 class="modal-title" id="gridSystemModalLabel">Informações registradas</h4>
-                                                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">X</span></button>
-                                                    </div>
-                                                    <div class="modal-body">
-                                                        <form action="" method="post">
-                                                            <div class="col-md-4 pull-left">
-                                                                <strong><label for="voucher">Voucher</label></strong>
-                                                                <input class="form-control" name="voucher" id="voucher" value="<?php echo( $voucher ); ?>">
-                                                            </div>
-                                                            <div class="col-md-4 pull-left">
-                                                                <strong><label for="novostatus">Status</label></strong>
-                                                                <select class="form-control" name="novostatus" id="novostatus">
-                                                                    <?php while ($updateStatus = $status2->fetch(PDO::FETCH_ASSOC) ){ ?>
-                                                                        <?php  if($updateStatus['id'] == $statusEscolhido){ ?>
-                                                                            <option selected value="<?php echo($updateStatus['id']); ?>">
-                                                                                <?php echo( utf8_encode( $updateStatus['nameinvoice'])); ?>
-                                                                            </option>
-                                                                        <?php } else{?>
-                                                                            <option  value="<?php echo($updateStatus['id']); ?>">
-                                                                                <?php echo(utf8_encode( $updateStatus['nameinvoice'])); ?>
-                                                                            </option>
-                                                                        <?php }?>
-                                                                    <?php }?>
-                                                                </select>
+        <!-- Voucher info card -->
+        <div class="sv-card">
+            <div class="sv-heading">
+                <h3>Voucher <?= htmlspecialchars($dadosGerais['numbervoucher']) ?></h3>
+                <small>
+                    Abertura: <?= date('d/m/Y', strtotime($dadosGerais['abertura'])) ?>
+                    &nbsp;·&nbsp;
+                    Status: <?= htmlspecialchars($dadosGerais['statuu'] ?? '—') ?>
+                </small>
+            </div>
+            <div class="sv-body">
 
-                                                            </div>
-                                                            <div class="col-md-4 pull-right">
-                                                                <strong><label for="formapagamento">CC</label></strong>
-                                                                <select class="form-control" name="formapagamento">
-                                                                    <?php while ($infoAdm = $contaCorrente2->fetch(PDO::FETCH_ASSOC) ){ ?>
-                                                                        <?php  if($infoAdm['id'] == $contaC){ ?>
-                                                                            <option selected value="<?php echo($infoAdm['id']); ?>">
-                                                                                <?php echo( utf8_encode( $infoAdm['name'])); ?>
-                                                                            </option>
-                                                                        <?php } else{?>
-                                                                            <option  value="<?php echo($infoAdm['id']); ?>">
-                                                                                <?php echo(utf8_encode( $infoAdm['name'])); ?>
-                                                                            </option>
-                                                                        <?php }?>
-                                                                    <?php }?>
-                                                                </select>
+                <!-- Info pills -->
+                <div>
+                    <span class="sv-info-pill"><strong>PAX:</strong> <?= htmlspecialchars($dadosGerais['pax']) ?></span>
+                    <span class="sv-info-pill"><strong>Serviço:</strong> <?= htmlspecialchars($dadosGerais['servico'] ?? '—') ?></span>
+                    <span class="sv-info-pill"><strong>Cliente:</strong> <?= htmlspecialchars($dadosGerais['cliente'] ?? '—') ?></span>
+                    <span class="sv-info-pill"><strong>Responsável:</strong> <?= htmlspecialchars(($dadosGerais['firstname'] ?? '') . ' ' . ($dadosGerais['lastname'] ?? '')) ?></span>
+                    <span class="sv-info-pill"><strong>Pax:</strong> <?= (int)$dadosGerais['qtdpax'] ?> adulto(s) + <?= (int)$dadosGerais['qtdchild'] ?> criança(s)</span>
+                </div>
 
-                                                            </div>
-                                                            <div class="col-md-4 pull-left">
-                                                                <strong><label for="vencimento">Vencimento</label></strong>
-                                                                <input type="date" name="vencimento" id="vencimento" value="<?php echo($dataVencimento); ?>">
-
-                                                            </div>
-                                                            <div class="col-md-4 pull-left">
-                                                                <strong><label for="pagamento">Pagamento</label></strong>
-                                                                <input type="date" name="pagamento" id="pagamento" value="<?php echo($dataPagamento); ?>">
-
-                                                            </div>
-                                                            <div class="col-md-4 pull-right">
-                                                                <strong><label for="info">Info</label></strong>
-                                                                <input class="form-control" name="info" id="info" value="<?php echo( $numeracao ); ?>">
-                                                            </div>
-                                                            <input type="hidden" name="id" id="id" value="<?php echo($ultimoIdFatura); ?>">
-                                                            <button style="margin-bottom: 20px;" type="submit" class="btn btn-primary btn-block btn-lg" name="atualizar" id="atualizarfatura">
-                                                                Atualizar informações
-                                                            </button>
-                                                        </form>
-                                                        <p class="pull-right">
-                                                            <?php echo("Total do Serviço R$ ".number_format(
-                                                                    $register_data_one_value['total'] + $register_data_two_value['totaltwo'], 2,
-                                                                    ",", ".")); ?>
-                                                        </p><br>
-                                                        <?php if($contadorFinanceiro > 0){ ?>
-                                                            <h4>Dados Financeiros</h4>
-                                                            <hr>
-
-                                                            <div class="table-responsive">
-                                                                <table class="table table-bordered">
-                                                                    <thead>
-                                                                    <tr>
-                                                                        <th>Data de Pagamento</th>
-                                                                        <th>Valor Pago</th>
-                                                                    </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                    <?php while($dadosFinanceiro = $financeiroReserva->fetch( PDO::FETCH_ASSOC ) ){ ?>
-                                                                        <tr>
-                                                                            <td><?php echo( date('d-m-Y', strtotime($dadosFinanceiro['datapagamento'])) ); ?></td>
-                                                                            <td><?php echo( "R$ ".number_format($dadosFinanceiro['credito'], 2, ",", ".") ); ?></td>
-                                                                        </tr>
-                                                                    <?php }?>
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        <?php }?>
-
-                                                        <?php if($contadorAdm > 0){ ?>
-                                                            <h4>Dados Administrativos</h4>
-                                                            <hr>
-                                                            <div class="table-responsive">
-                                                                <table class="table table-bordered">
-                                                                    <thead>
-                                                                    <tr>
-                                                                        <th>Data de Vencimento</th>
-                                                                        <th>Data de Pagamento</th>
-                                                                        <th>Observação</th>
-                                                                        <th>Forma de Pagamento</th>
-
-                                                                    </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                    <?php while( $registroAdm = $administrativo->fetch(PDO::FETCH_ASSOC) ){ ?>
-                                                                        <tr>
-                                                                            <td><?php echo( date('d-m-Y', strtotime($registroAdm['datematurity'])) ); ?></td>
-                                                                            <td><?php echo( date('d-m-Y', strtotime($registroAdm['datepayment'])) ); ?></td>
-                                                                            <td><?php echo( utf8_encode($registroAdm['numberadd']) ); ?></td>
-                                                                            <td><?php echo( utf8_encode($registroAdm['name']) ); ?></td>
-
-                                                                        </tr>
-                                                                    <?php }?>
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        <?php }?>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                <?php } elseif(!empty( $_POST['salvar']) and count($dadosGerais)  == 0 ) {?>
-                                    <div class="alert alert-warning" role="alertdialog">Não foi possível encontrar  o vouher. <a href="statusvoucher">Tente Novamente</a></div>
-                                <?php }?>
-
-                                <?php if( isset($_POST['atualizar']) ){ ?>
-
-                                    <div class="col-lg-12" style="margin-top: 40px;">
-                                        <div class="modal fade" id="exemplomodal" tabindex="-1" role="dialog" aria-labelledby="myLargeModalLabel">
-                                            <div class="modal-dialog modal-lg" role="document">
-                                                <div class="modal-content">
-                                                    <div class="modal-header">
-                                                        <h4 class="modal-title" id="gridSystemModalLabel">Informações fornecidas</h4>
-                                                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">X</span></button>
-                                                    </div>
-                                                    <div class="modal-body">
-                                                        <div class="table-responsive">
-                                                            <table class="table table-bordered">
-                                                                <thead>
-                                                                <tr>
-                                                                    <th>Voucher</th>
-                                                                    <th>Status</th>
-                                                                    <th>Data Vencimento</th>
-                                                                    <th>Data Pagamento</th>
-                                                                    <th>Númeração</th>
-                                                                    <th>Pagamento</th>
-                                                                </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                <tr>
-                                                                    <td><?php echo($_POST['voucher']); ?></td>
-                                                                    <td><?php echo($newStatus['name']); ?></td>
-                                                                    <td><?php echo(date("d/m/Y", strtotime($_POST['vencimento']))); ?></td>
-                                                                    <td><?php echo(date("d/m/Y", strtotime($_POST['pagamento']))); ?></td>
-                                                                    <td><?php echo($_POST['info']); ?></td>
-                                                                    <td><?php echo($newconta['nameinvoice']); ?></td>
-                                                                </tr>
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                <?php }?>
-                            </div>
-                        </div>
+                <!-- Totals -->
+                <div class="sv-totals">
+                    <div class="sv-total-box servico">
+                        <div class="label">Total Serviço</div>
+                        <div class="value">R$ <?= number_format($totalServico, 2, ',', '.') ?></div>
+                    </div>
+                    <div class="sv-total-box pago">
+                        <div class="label">Total Pago</div>
+                        <div class="value">R$ <?= number_format($totalPago, 2, ',', '.') ?></div>
+                    </div>
+                    <div class="sv-total-box <?= $saldo > 0 ? 'negativo' : 'pago' ?>">
+                        <div class="label">Saldo Devedor</div>
+                        <div class="value">R$ <?= number_format(max(0, $saldo), 2, ',', '.') ?></div>
                     </div>
                 </div>
 
-            <?php }?>
+                <!-- Payments -->
+                <?php if (!empty($pagamentos)): ?>
+                    <div class="sv-section-title">Pagamentos Registrados</div>
+                    <div class="table-responsive">
+                        <table class="sv-table">
+                            <thead><tr>
+                                <th>Data</th>
+                                <th>Forma</th>
+                                <th style="text-align:right">Valor</th>
+                            </tr></thead>
+                            <tbody>
+                            <?php foreach ($pagamentos as $p): ?>
+                                <tr>
+                                    <td><?= date('d/m/Y', strtotime($p['datacredit'])) ?></td>
+                                    <td><?= htmlspecialchars($p['forma'] ?? '—') ?></td>
+                                    <td style="text-align:right;font-weight:600">R$ <?= number_format((float)$p['valuecredit'], 2, ',', '.') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
 
+                <!-- Faturas -->
+                <?php if (!empty($faturas)): ?>
+                    <div class="sv-section-title">Faturas Cadastradas</div>
+                    <div class="table-responsive">
+                        <table class="sv-table">
+                            <thead><tr>
+                                <th>#</th>
+                                <th>Vencimento</th>
+                                <th>Pagamento</th>
+                                <th>Observação</th>
+                                <th>Conta</th>
+                                <th></th>
+                            </tr></thead>
+                            <tbody>
+                            <?php foreach ($faturas as $f): ?>
+                                <tr>
+                                    <td><?= (int)$f['id'] ?></td>
+                                    <td><?= date('d/m/Y', strtotime($f['datematurity'])) ?></td>
+                                    <td><?= date('d/m/Y', strtotime($f['datepayment'])) ?></td>
+                                    <td><?= htmlspecialchars($f['numberadd'] ?? '') ?></td>
+                                    <td><?= htmlspecialchars($f['conta'] ?? '—') ?></td>
+                                    <td>
+                                        <button class="btn-sv-sm" type="button"
+                                            data-toggle="modal" data-target="#modalEditFatura"
+                                            data-id="<?= (int)$f['id'] ?>"
+                                            data-venci="<?= htmlspecialchars($f['datematurity']) ?>"
+                                            data-pag="<?= htmlspecialchars($f['datepayment']) ?>"
+                                            data-num="<?= htmlspecialchars($f['numberadd'] ?? '') ?>"
+                                            data-conta="<?= (int)$f['idcurrentaccount'] ?>"
+                                            data-voucher="<?= htmlspecialchars($dadosGerais['numbervoucher']) ?>">
+                                            Editar
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Add fatura form -->
+                <div class="sv-section-title">Cadastrar Fatura</div>
+                <form method="post">
+                    <input type="hidden" name="voucher" value="<?= htmlspecialchars($dadosGerais['numbervoucher']) ?>">
+                    <div class="sv-form-row">
+                        <div class="field">
+                            <label>Status Invoice</label>
+                            <select name="statusescolhido" class="form-control" required>
+                                <?php foreach ($statusList as $s): ?>
+                                    <option value="<?= (int)$s->id ?>"
+                                        <?= ((int)$s->id === (int)$dadosGerais['idstatusinvoice']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($s->nameinvoice) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Forma de Pagamento</label>
+                            <select name="ccfp" class="form-control" required>
+                                <option value="">Selecione</option>
+                                <?php foreach ($contas as $c): ?>
+                                    <option value="<?= (int)$c['id'] ?>"><?= htmlspecialchars(strtoupper($c['name'])) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="field" style="min-width:140px;max-width:160px">
+                            <label>Data Vencimento</label>
+                            <input type="date" name="datavencimento" class="form-control" value="<?= date('Y-m-d') ?>">
+                        </div>
+                        <div class="field" style="min-width:140px;max-width:160px">
+                            <label>Data Pagamento</label>
+                            <input type="date" name="datapagamento" class="form-control" value="<?= date('Y-m-d') ?>">
+                        </div>
+                        <div class="field">
+                            <label>Observação</label>
+                            <input type="text" name="numeracao" class="form-control" value="Ok" placeholder="Info adicional">
+                        </div>
+                    </div>
+                    <button type="submit" name="salvar" class="btn-sv-primary">Cadastrar Fatura</button>
+                </form>
+
+            </div>
         </div>
-    </div>
 
-    <?php require_once ('footer.php'); ?>
+        <!-- Edit fatura modal -->
+        <div class="modal fade" id="modalEditFatura" tabindex="-1" role="dialog">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content" style="border-radius:16px;overflow:hidden">
+                    <div class="modal-header" style="background:linear-gradient(135deg,#1e4770,#256aa0);color:#fff;border:0">
+                        <h5 class="modal-title" style="color:#fff;font-weight:700">Editar Fatura</h5>
+                        <button type="button" class="close" data-dismiss="modal" style="color:#fff;opacity:.8"><span>&times;</span></button>
+                    </div>
+                    <div class="modal-body" style="padding:24px 28px">
+                        <form method="post">
+                            <input type="hidden" name="idfatura" id="ef_idfatura">
+                            <input type="hidden" name="voucher" id="ef_voucher">
+                            <div class="sv-form-row">
+                                <div class="field">
+                                    <label for="ef_status">Status Invoice</label>
+                                    <select name="novostatus" class="form-control" id="ef_status">
+                                        <?php foreach ($statusList as $s): ?>
+                                            <option value="<?= (int)$s->id ?>"><?= htmlspecialchars($s->nameinvoice) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label for="ef_conta">Forma de Pagamento</label>
+                                    <select name="formapagamento" class="form-control" id="ef_conta">
+                                        <?php foreach ($contas as $c): ?>
+                                            <option value="<?= (int)$c['id'] ?>"><?= htmlspecialchars(strtoupper($c['name'])) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="field" style="min-width:140px;max-width:160px">
+                                    <label for="ef_venci">Data Vencimento</label>
+                                    <input type="date" name="datavencimento" class="form-control" id="ef_venci">
+                                </div>
+                                <div class="field" style="min-width:140px;max-width:160px">
+                                    <label for="ef_pag">Data Pagamento</label>
+                                    <input type="date" name="datapagamento" class="form-control" id="ef_pag">
+                                </div>
+                                <div class="field">
+                                    <label for="ef_num">Observação</label>
+                                    <input type="text" name="numeracao" class="form-control" id="ef_num">
+                                </div>
+                            </div>
+                            <button type="submit" name="atualizar" class="btn-sv-primary">Salvar alterações</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <?php endif; ?>
+
+    </div><!-- /containerrrr -->
+</div><!-- /sv-page -->
+
+<script>
+$('#modalEditFatura').on('show.bs.modal', function (e) {
+    var btn = $(e.relatedTarget);
+    $('#ef_idfatura').val(btn.data('id'));
+    $('#ef_voucher').val(btn.data('voucher'));
+    $('#ef_venci').val(btn.data('venci'));
+    $('#ef_pag').val(btn.data('pag'));
+    $('#ef_num').val(btn.data('num'));
+    $('#ef_conta').val(btn.data('conta'));
+});
+</script>
+
+<?php require_once('footer.php'); ?>

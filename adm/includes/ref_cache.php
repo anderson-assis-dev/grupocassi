@@ -74,3 +74,13 @@ function refHorarios(PDO $pdo): array
 {
     return _refLoad($pdo, 'horarios', 'SELECT * FROM `ct_service_schedule` ORDER BY schedule');
 }
+
+function refUsuarios(PDO $pdo): array
+{
+    return _refLoad($pdo, 'usuarios', 'SELECT * FROM `ct_usuario` WHERE bloqueado = 0 ORDER BY firstname');
+}
+
+function refStatusInvoice(PDO $pdo): array
+{
+    return _refLoad($pdo, 'status_invoice', 'SELECT * FROM `ct_statusinvoice`');
+}

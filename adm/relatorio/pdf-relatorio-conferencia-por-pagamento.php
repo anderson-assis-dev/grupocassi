@@ -1,1213 +1,519 @@
 <?php
-ini_set('max_execution_time', 800);
-require_once('../.././config.php');
-ob_start();
+ini_set('max_execution_time', 120);
+require_once '../../config.php';
+require_once __DIR__ . '/../includes/audit.php';
 
-$inicio          = $_POST['inicio'];
-$fim             = $_POST['fim'];
-$responsavel     = $_POST['responsavel'];
-$agencia         = $_POST['cliente'];
-$idempresa         = $_POST['idempresa'];
-$sql_empresa  = ($idempresa > 0 ) ? " and idempresa = $idempresa ": ' ';
-$total_cartaocredito = 0;
-$total_cartaodebito  = 0;
-$total_dinheiro      = 0;
-$total_transferencia = 0;
-$total_paypal        = 0;
-$total_cortesia      = 0;
-$total_panda         = 0;
-$total_linkStone    = 0;
-if (isset($_POST['tipo'])) {
-    $tipo        = $_POST['tipo'];
-} else {
-    $tipo        = 1;
-}
+$inicio    = $_POST['inicio']    ?? '';
+$fim       = $_POST['fim']       ?? '';
+$responsavel = (int)($_POST['responsavel'] ?? 0);
+$agencia     = (int)($_POST['cliente']     ?? 0);
+$idempresa   = (int)($_POST['idempresa']   ?? 0);
+$tipo        = (int)($_POST['tipo']        ?? 1);
 
+$sqlEmpresa = $idempresa > 0 ? " AND r.idempresa = $idempresa " : '';
+
+// ---------------------------------------------------------------------------
+// TIPO 1 — Descritivo (por voucher)
+// ---------------------------------------------------------------------------
 if ($tipo == 1) {
-    if ($responsavel == 0) {
 
-        if($agencia) {
-
-            $find_file_salesmen = $pdo->prepare("select cfc.numbervoucher from `ct_createfaturacredit` cfc
-                left join `ct_reserva` r on r.numbervoucher = cfc.numbervoucher
-                where r.idcliente = :cliente $sql_empresa and datacredit >= :inicio and datacredit <= :fim group by cfc.numbervoucher");
-            $find_file_salesmen->execute(
-                array(
-                    ":inicio" => $inicio,
-                    ":fim"    => $fim,
-                    ":cliente" => $agencia
-                )
-            );
-
-        } else {
-            $find_file_salesmen = $pdo->prepare('select cfc.numbervoucher from `ct_createfaturacredit` cfc where datacredit >= :inicio and datacredit <= :fim group by cfc.numbervoucher');
-            $find_file_salesmen->execute(
-                array(
-                    ":inicio" => $inicio,
-                    ":fim"    => $fim
-                )
-            );
-        }
-
-
-    } else {
-        $find_file_salesmen = $pdo->prepare('select cfc.numbervoucher from `ct_createfaturacredit` cfc  where cfc.datacredit >= :inicio and cfc.datacredit <= :fim and cfc.idusr = :usuario group by cfc.numbervoucher');
-        $find_file_salesmen->execute(
-            array(
-                ":inicio"   => $inicio,
-                ":fim"      => $fim,
-                ":usuario"  => $responsavel
-            )
-        );
-        $caixa         = $pdo->prepare(
-            " select c.id,c.datevencimento, c.nome ,c.datecompetencia, c.datepagamento, c.descricao, forne.fullname as fornecedor, tc.`name` as tipo, cc.`name`
-              as conta,p.`name` as plano, s.`nameinvoice` as situacao, c.valor, em.fullname as empresa from  `ct_caixa` c left join ct_fornecedor forne on forne.id = c.idcliente
-              left join ct_tipocaixa tc on tc.id = c.idtipo left join ct_currentaccount cc on cc.id = c.idconta left join ct_planaccounts p on p.id = c.idplano
-              left join ct_statusinvoice s on s.id = c.idstatus left join ct_empresa em on em.id = c.idempresa where c.`datepagamento` >= :inicio and c.`datepagamento` <= :fim and c.idusr = :idusuario and c.`idtipo` = :tipo  "
-        );
-        $caixa->execute(array(":inicio" => $inicio, ":fim" => $fim, ":idusuario" => $responsavel, ":tipo" => 2));
-    }
-
-    $data_find_file_salesmen = $find_file_salesmen->fetchAll(PDO::FETCH_CLASS);
-    // $find_file_salesmen->debugDumpParams();
-    // die;
-
-    $verify = $find_file_salesmen->rowCount();
+    // 1. Lista de vouchers no período, filtrada por usuário/agência
+    $params = [];
+    $where  = "cfc.datacredit >= ? AND cfc.datacredit <= ?";
+    $params = [$inicio, $fim];
 
     if ($responsavel > 0) {
-        $registroCaixa = $caixa->fetchAll(PDO::FETCH_CLASS);
-        // print_r('$registroCaixa => ');
-        // $caixa->debugDumpParams();
-        // die;
-        $verify_caixa = $caixa->rowCount();
+        $where .= " AND cfc.idusr = ?";
+        $params[] = $responsavel;
     }
-
-
-    $controler = 1;
-    $total_adulto  = 0;
-    $total_crianca = 0;
-    $total_free    = 0;
-    $total_general = 0;
-    $total_recebido = 0;
-
-    $total_one = 0;
-    $total_two = 0;
-    $total_out = 0;
-} else {
-    $find_file_salesmen = $pdo->prepare('select distinct(idusr), numbervoucher from `ct_createfaturacredit` cfc where datacredit >= :inicio and datacredit <= :fim  ORDER by idusr');
-    $find_file_salesmen->execute(
-        array(
-            ":inicio" => $inicio,
-            ":fim"    => $fim
-        )
-    );
-    $data_find_file_salesmen = $find_file_salesmen->fetchAll(PDO::FETCH_CLASS);
-    // print_r('$data_find_file_salesmen');
-    // $find_file_salesmen->debugDumpParams();
-
-    $data = array();
-    $ant = 0;
-    foreach ($data_find_file_salesmen as $item) {
-        if ($item->idusr <> $ant and !empty($item->numbervoucher)) {
-            $data[] = (object)array(
-                "idusr" => $item->idusr,
-                "numbervoucher" => $item->numbervoucher
-            );
-            $ant = $item->idusr;
-        }
-    }
-    $data_find_file_salesmen = $data;
-    $tot_dia = 0;
-
-    $find_despesas = $pdo->prepare('select distinct(idusr) from `ct_caixa` c where c.`datepagamento` >= :inicio and c.`datepagamento` <= :fim and c.`idtipo` = 2  ORDER by c.idusr');
-    $find_despesas->execute(
-        array(
-            ":inicio" => $inicio,
-            ":fim"    => $fim
-        )
-    );
-    $data_find_despesas = $find_despesas->fetchAll(PDO::FETCH_CLASS);
-    // print_r('$data_find_despesas');
-    // $find_despesas->debugDumpParams();
-
-    $ant = 0;
-    $data = array();
-    foreach ($data_find_despesas as $item) {
-        if ($item->idusr <> $ant) {
-            $data[] = (object)array(
-                "idusr" => $item->idusr,
-            );
-            $ant = $item->idusr;
-        }
-    }
-    $data_find_despesas = $data;
-    $total_despesas = 0;
     if ($agencia > 0) {
-        $dadosReserva = $pdo->prepare(
-            "select * from `ct_createfaturacredit` cf left join `ct_reserva` r on cf.numbervoucher = r.numbervoucher left join ct_cliente c on c.id = r.idcliente left join `ct_usuario` u on u.id = r.idresponsavel where cf.`datacredit` >= :inn and r.`idstatus` <> 2
-                    and cf.`datacredit` <= :outt and r.idcliente = :cliente $sql_empresa "
-        );
-        $dadosReserva->execute(array(":inn" => $inicio, ":cliente" => $agencia, ":outt" => $fim));
-        $reservas = $dadosReserva->fetchAll(PDO::FETCH_CLASS);
-        // print_r('$reservas');
-        // $dadosReserva->debugDumpParams();
+        $where .= " AND r.idcliente = ?";
     }
-}
 
-ob_clean();
-?>
-<?php if ($tipo == 1) { ?>
-    <?php if ($verify > 0) { ?>
-        <html xmlns="http://www.w3.org/1999/xhtml">
+    if ($agencia > 0) {
+        $stVouchers = $pdo->prepare(
+            "SELECT cfc.numbervoucher FROM ct_createfaturacredit cfc
+             LEFT JOIN ct_reserva r ON r.numbervoucher = cfc.numbervoucher
+             WHERE $where $sqlEmpresa
+             GROUP BY cfc.numbervoucher"
+        );
+        $params[] = $agencia;
+    } else {
+        $stVouchers = $pdo->prepare(
+            "SELECT cfc.numbervoucher FROM ct_createfaturacredit cfc
+             WHERE $where GROUP BY cfc.numbervoucher"
+        );
+    }
+    $stVouchers->execute($params);
+    $vouchers = $stVouchers->fetchAll(PDO::FETCH_COLUMN);
 
-        <head>
-            <meta charset="utf-8">
-            <title>Relatório de conferência do vendedor</title>
-            <link rel="stylesheet" href="materialize.min.css">
-        </head>
-        <style>
-            th,
-            td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                font-size: 10px;
-            }
+    // 2. Despesas do operador (ct_caixa), se responsável informado
+    $registroCaixa = [];
+    $totalOut = 0.0;
+    if ($responsavel > 0) {
+        $stCaixa = $pdo->prepare(
+            "SELECT c.*, forne.fullname AS fornecedor, tc.name AS tipo,
+                    cc.name AS conta, p.name AS plano, s.nameinvoice AS situacao, em.fullname AS empresa
+             FROM ct_caixa c
+             LEFT JOIN ct_fornecedor forne   ON forne.id = c.idcliente
+             LEFT JOIN ct_tipocaixa tc       ON tc.id   = c.idtipo
+             LEFT JOIN ct_currentaccount cc  ON cc.id   = c.idconta
+             LEFT JOIN ct_planaccounts p     ON p.id    = c.idplano
+             LEFT JOIN ct_statusinvoice s    ON s.id    = c.idstatus
+             LEFT JOIN ct_empresa em         ON em.id   = c.idempresa
+             WHERE c.datepagamento >= ? AND c.datepagamento <= ?
+               AND c.idusr = ? AND c.idtipo = 2"
+        );
+        $stCaixa->execute([$inicio, $fim, $responsavel]);
+        $registroCaixa = $stCaixa->fetchAll(PDO::FETCH_OBJ);
+        foreach ($registroCaixa as $r) {
+            $totalOut += (float)$r->valor;
+        }
+    }
 
-            td#desc {
-                font-weight: bold;
-            }
-        </style>
-
+    if (empty($vouchers)) {
+        ?><!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório</title>
+        <style>body{font-family:Arial,sans-serif;padding:40px;color:#555}</style></head>
         <body>
-            <div class="container">
-                <img style="width: 700px;" id="logo" src="../../images/logo.png" />
-
-                <hr>
-                <p><?php echo (utf8_decode(
-                        "Relatório de Conferência de: " .
-                            date("d/m/Y ", strtotime($inicio)) . " ate " . date("d/m/Y ", strtotime($fim))
-                    )); ?> </p><br>
-                <p style="font-size: 9px; margin-top: -20px;">Impresso em: <?php echo (date("d/m/Y - H:i:s")); ?></p>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Embarque</th>
-                            <th>Voucher</th>
-                            <th>Agência</th>
-                            <th>Pax</th>
-                            <th>P | C | F</th>
-                            <th>Vendedor(a)</th>
-                            <th>Serviço</th>
-                            <th>Valor</th>
-                            <th>Valor Total</th>
-                            <th>Recebido Por</th>
-                            <th>Pago em</th>
-                            <th>Valor recebido</th>
-                            <th>Situação</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($data_find_file_salesmen as $key => $item) {
-
-                            if ($agencia > 0) {
-                                $find_reservation_primary = $pdo->prepare(
-                                    "select r.id, dateinput , c.namefantazia as cliente, pax, s.fullname as servico,qtdpax, qtdchild, nameinvoice as situacao, r.valueservice, r.idstatusinvoice, qtdfree, u.firstname, u.lastname, data_integracao
-                                    from `ct_reserva` r  left join `ct_cliente` c on c.`id` = r.`idcliente` left join `ct_servico` s on s.`id` = r.`idservico` left join `ct_usuario` u on u.`id` = r.`idresponsavel`
-                                    left join `ct_statusinvoice` si on si.`id` = r.`idstatusinvoice` where r.numbervoucher = :voucher $sql_empresa and r.`idcliente` = :cliente"
-                                );
-                                $find_reservation_primary->execute(array(":voucher" => $item->numbervoucher, ":cliente" => $agencia));
-                                if(!$find_reservation_primary->rowCount()){
-                                    continuer;
-                                }
-
-
-                                if ($responsavel > 0) {
-                                    echo ("SELECT datacredit as dia, `name` as pagamento, sum(valuecredit) as valor, u.firstname, u.lastname  FROM `ct_createfaturacredit` cfc
-                                        left join `ct_currentaccount` cc on cc.id = cfc.idaccountcurrent left join `ct_usuario` u on cfc.idusr = u.id left join ct_reserva cr on cfc.numbervoucher = cr.numbervoucher
-                                        where cr.numbervoucher = '$item->numbervoucher' and cfc.idusr = $responsavel and cr.`idcliente` = $agencia and datacredit >= '$inicio' and datacredit <= '$fim' ");
-                                    $find_data_payments_of_client = $pdo->prepare(
-                                        "SELECT datacredit as dia, `name` as pagamento, sum(valuecredit) as valor, u.firstname, u.lastname  FROM `ct_createfaturacredit` cfc
-                                          left join `ct_currentaccount` cc on cc.id = cfc.idaccountcurrent left join `ct_usuario` u on cfc.idusr = u.id left join ct_reserva cr on cfc.numbervoucher = cr.numbervoucher
-                                          where cr.numbervoucher = '$item->numbervoucher' $sql_empresa and cfc.idusr = $responsavel and cr.`idcliente` = $agencia and datacredit >= '$inicio' and datacredit <= '$fim' GROUP by idusr"
-                                    );
-                                    $find_data_payments_of_client->execute();
-                                    continue;
-                                    $transferencia = $pdo->prepare("select sum(cfc.valuecredit) as totaltransferencia from `ct_createfaturacredit` cfc  where datacredit >= '$inicio' and datacredit <= '$fim' and cfc.idusr = $responsavel and idaccountcurrent = 36 ");
-                                    $transferencia->execute();
-                                    $data_tranferenci = $transferencia->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_tranferenci');
-                                    // $transferencia->debugDumpParams();
-                                    $total_transferencia += $data_tranferenci['totaltransferencia'];
-
-                                    $cartao_credito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaocredito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id and idaccountcurrent = :forma ');
-                                    $cartao_credito->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 24,
-                                        )
-                                    );
-                                    $data_cartao_credito = $cartao_credito->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_cartao_credito');
-                                    // $cartao_credito->debugDumpParams();
-
-                                    $total_cartaocredito += $data_cartao_credito['totalcartaocredito'];
-
-                                    $cartao_debito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaodebito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id and idaccountcurrent = :forma ');
-                                    $cartao_debito->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 25,
-                                        )
-                                    );
-                                    $data_cartao_debito = $cartao_debito->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_cartao_debito');
-                                    // $cartao_debito->debugDumpParams();
-
-                                    $total_cartaodebito += $data_cartao_debito['totalcartaodebito'];
-
-                                    $paypal = $pdo->prepare('select sum(cfc.valuecredit) as totalpaypal from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                    $paypal->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 22,
-                                        )
-                                    );
-                                    $data_paypal = $paypal->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_paypal');
-                                    // $paypal->debugDumpParams();
-
-                                    $total_paypal += $data_paypal['totalpaypal'];
-
-                                    $dinheiro = $pdo->prepare('select sum(cfc.valuecredit) as totaldinheiro from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id   and idaccountcurrent = :forma ');
-                                    $dinheiro->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 18,
-                                        )
-                                    );
-
-                                    $data_dinheiro = $dinheiro->fetch(PDO::FETCH_ASSOC);
-                                    $total_dinheiro += $data_dinheiro['totaldinheiro'];
-
-                                    // LINKSTONE
-                                    $linkStone = $pdo->prepare('select sum(cfc.valuecredit) as totallinkstone from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id   and idaccountcurrent = :forma ');
-                                    $linkStone->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 41,
-                                        )
-                                    );
-                                    $data_linkStone = $linkStone->fetch(PDO::FETCH_ASSOC);
-                                    $total_linkStone += $data_linkStone['totallinkstone'];
-
-                                    $panda = $pdo->prepare('select sum(cfc.valuecredit) as totalpanda from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                    $panda->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 23,
-                                        )
-                                    );
-                                    $data_panda = $panda->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_panda');
-                                    // $panda->debugDumpParams();
-
-                                    $total_panda += $data_panda['totalpanda'];
-
-                                    $cortesia = $pdo->prepare('select sum(cfc.valuecredit) as totalcortesia from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                    $cortesia->execute(
-                                        array(
-                                            ":inicio" => $inicio,
-                                            ":fim"    => $fim,
-                                            ":id"     => $responsavel,
-                                            ":forma"  => 39,
-                                        )
-                                    );
-                                    $data_cortesia = $cortesia->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_cortesia');
-                                    // $cortesia->debugDumpParams();
-
-                                    $total_cortesia += $data_cortesia['totalcortesia'];
-                                } else {
-                                    $find_data_payments_of_client = $pdo->prepare(
-                                        'SELECT sum(valuecredit) as valor FROM `ct_createfaturacredit` cfc
-                                          left join `ct_currentaccount` cc on cc.id = cfc.idaccountcurrent left join `ct_usuario` u on cfc.idusr = u.id left join ct_reserva cr on cfc.numbervoucher = cr.numbervoucher
-                                          where cr.numbervoucher = :voucher  and cr.`idcliente` = :cliente and datacredit >= :inicio and datacredit <= :fim'
-                                    );
-                                    $find_data_payments_of_client->execute(array(":voucher" =>  $item->numbervoucher, ":cliente" => $agencia, ":inicio" => $inicio, ":fim"    => $fim,));
-                                    $find_data_payments_of_client2 = $pdo->prepare(
-                                        "SELECT datacredit as dia, `name` as pagamento, u.firstname, u.lastname  FROM `ct_createfaturacredit` cfc
-                                          left join `ct_currentaccount` cc on cc.id = cfc.idaccountcurrent left join `ct_usuario` u on cfc.idusr = u.id left join ct_reserva cr on cfc.numbervoucher = cr.numbervoucher
-                                          where cr.numbervoucher = :voucher  and cr.`idcliente` = :cliente $sql_empresa and datacredit >= :inicio and datacredit <= :fim"
-                                    );
-                                    $find_data_payments_of_client2->execute(array(":voucher" =>  $item->numbervoucher, ":cliente" => $agencia, ":inicio" => $inicio, ":fim"    => $fim,));
-
-                                    // $transferencia = $pdo->prepare('select sum(cfc.valuecredit) as totaltransferencia from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $transferencia->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"  => 36,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-                                    // $data_tranferenci = $transferencia->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_tranferenci ===> ');
-                                    // $transferencia->debugDumpParams();
-
-                                    // $total_transferencia += $data_tranferenci['totaltransferencia'];
-
-
-
-                                    // $cartao_credito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaocredito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $cartao_credito->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"  => 24,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-                                    // $data_cartao_credito = $cartao_credito->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_cartao_credito');
-                                    // $cartao_credito->debugDumpParams();
-                                    // die;
-                                    // $total_cartaocredito += $data_cartao_credito['totalcartaocredito'];
-
-
-
-                                    // $cartao_debito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaodebito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $cartao_debito->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"  => 25,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-                                    // $data_cartao_debito = $cartao_debito->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_cartao_debito');
-                                    // $cartao_debito->debugDumpParams();
-                                    // $total_cartaodebito += $data_cartao_debito['totalcartaodebito'];
-
-
-
-                                    // $paypal = $pdo->prepare('select sum(cfc.valuecredit) as totalpaypal from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $paypal->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"  => 22,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-                                    // $data_paypal = $paypal->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_paypal');
-                                    // $paypal->debugDumpParams();
-
-                                    // $total_paypal += $data_paypal['totalpaypal'];
-
-
-
-                                    // $dinheiro = $pdo->prepare('select sum(cfc.valuecredit) as totaldinheiro from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $dinheiro->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"   => 18,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-
-                                    // $data_dinheiro = $dinheiro->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_dinheiro');
-                                    // $find_file_salesmen->debugDumpParams();
-
-                                    // $total_dinheiro += $data_dinheiro['totaldinheiro'];
-
-
-                                    // $panda = $pdo->prepare('select sum(cfc.valuecredit) as totalpanda from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $panda->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"  => 23,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-                                    // $data_panda = $panda->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_panda');
-                                    // $panda->debugDumpParams();
-
-                                    // $total_panda += $data_panda['totalpanda'];
-
-                                    // $cortesia = $pdo->prepare('select sum(cfc.valuecredit) as totalcortesia from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and idaccountcurrent = :forma and numbervoucher = :voucher ');
-                                    // $cortesia->execute(
-                                    //     array(
-                                    //         ":inicio" => $inicio,
-                                    //         ":fim"    => $fim,
-                                    //         ":forma"  => 39,
-                                    //         ":voucher" => $item->numbervoucher
-                                    //     )
-                                    // );
-                                    // $data_cortesia = $cortesia->fetch(PDO::FETCH_ASSOC);
-                                    // print_r('$data_cortesia');
-                                    // $cortesia->debugDumpParams();
-                                    // die;
-
-                                    // $total_cortesia += $data_cortesia['totalcortesia'];
-                                }
-                            } else {
-                                $find_reservation_primary = $pdo->prepare(
-                                    "select r.id, dateinput , c.namefantazia as cliente, pax, s.fullname as servico,qtdpax, qtdchild, nameinvoice as situacao, r.valueservice, r.idstatusinvoice, qtdfree, u.firstname, u.lastname
-                                        from `ct_reserva` r  left join `ct_cliente` c on c.`id` = r.`idcliente` left join `ct_servico` s on s.`id` = r.`idservico` left join `ct_usuario` u on u.`id` = r.`idresponsavel`
-                                        left join `ct_statusinvoice` si on si.`id` = r.`idstatusinvoice` where r.numbervoucher = :voucher $sql_empresa ");
-                                $find_reservation_primary->execute(array(":voucher" => $item->numbervoucher));
-
-                                $find_data_payments_of_client = $pdo->prepare(
-                                    'SELECT  sum(valuecredit) as valor  FROM `ct_createfaturacredit` cfc
-                                          left join `ct_currentaccount` cc on cc.id = cfc.idaccountcurrent left join `ct_usuario` u on cfc.idusr = u.id where numbervoucher = :voucher and cfc.idusr = :id and datacredit >= :inicio and datacredit <= :fim'
-                                );
-                                $find_data_payments_of_client->execute(array(":voucher" =>  $item->numbervoucher, ":id" => $responsavel, ":inicio" => $inicio, ":fim"    => $fim,));
-                                $find_data_payments_of_client2 = $pdo->prepare(
-                                    'SELECT  u.firstname, u.lastname, cc.`name` as pagamento, cfc.datacredit as dia FROM `ct_createfaturacredit` cfc
-                                          left join `ct_currentaccount` cc on cc.id = cfc.idaccountcurrent left join `ct_usuario` u on cfc.idusr = u.id where numbervoucher = :voucher and cfc.idusr = :id and datacredit >= :inicio and datacredit <= :fim'
-                                );
-                                $find_data_payments_of_client2->execute(array(":voucher" =>  $item->numbervoucher, ":id" => $responsavel, ":inicio" => $inicio, ":fim"    => $fim,));
-                                $transferencia = $pdo->prepare('select sum(cfc.valuecredit) as totaltransferencia from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                $transferencia->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 36
-                                    )
-                                );
-                                $data_tranferenci = $transferencia->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_tranferenci');
-                                // $transferencia->debugDumpParams();
-
-                                $total_transferencia += $data_tranferenci['totaltransferencia'];
-
-                                $cartao_credito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaocredito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id and idaccountcurrent = :forma ');
-                                $cartao_credito->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 24,
-                                    )
-                                );
-                                $data_cartao_credito = $cartao_credito->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_cartao_credito');
-                                // $cartao_credito->debugDumpParams();
-
-                                $total_cartaocredito += $data_cartao_credito['totalcartaocredito'];
-
-                                $cartao_debito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaodebito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id and idaccountcurrent = :forma ');
-                                $cartao_debito->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 25,
-                                    )
-                                );
-                                $data_cartao_debito = $cartao_debito->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_cartao_debito');
-                                // $cartao_debito->debugDumpParams();
-
-                                $total_cartaodebito += $data_cartao_debito['totalcartaodebito'];
-
-                                $paypal = $pdo->prepare('select sum(cfc.valuecredit) as totalpaypal from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                $paypal->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 22,
-                                    )
-                                );
-                                $data_paypal = $paypal->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_paypal');
-                                // $paypal->debugDumpParams();
-
-                                $total_paypal += $data_paypal['totalpaypal'];
-
-                                $dinheiro = $pdo->prepare('select sum(cfc.valuecredit) as totaldinheiro from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id   and idaccountcurrent = :forma ');
-                                $dinheiro->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 18,
-                                    )
-                                );
-
-                                $data_dinheiro = $dinheiro->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_dinheiro');
-                                // $dinheiro->debugDumpParams();
-
-                                $total_dinheiro += $data_dinheiro['totaldinheiro'];
-
-                                // LINKSTONE
-                                $linkStone = $pdo->prepare('select sum(cfc.valuecredit) as totallinkstone from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id   and idaccountcurrent = :forma ');
-                                $linkStone->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 41,
-                                    )
-                                );
-                                $data_linkStone = $linkStone->fetch(PDO::FETCH_ASSOC);
-                                $total_linkStone += $data_linkStone['totallinkstone'];
-
-                                $panda = $pdo->prepare('select sum(cfc.valuecredit) as totalpanda from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                $panda->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 23,
-                                    )
-                                );
-                                $data_panda = $panda->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_panda');
-                                // $panda->debugDumpParams();
-
-                                $total_panda += $data_panda['totalpanda'];
-
-                                $cortesia = $pdo->prepare('select sum(cfc.valuecredit) as totalcortesia from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                                $cortesia->execute(
-                                    array(
-                                        ":inicio" => $inicio,
-                                        ":fim"    => $fim,
-                                        ":id"     => $responsavel,
-                                        ":forma"  => 39,
-                                    )
-                                );
-                                $data_cortesia = $cortesia->fetch(PDO::FETCH_ASSOC);
-                                // print_r('$data_cortesia');
-                                // $cortesia->debugDumpParams();
-
-                                $total_cortesia += $data_cortesia['totalcortesia'];
-                            }
-
-                            $data_payment_of_cliente = $find_data_payments_of_client->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_payment_of_cliente');
-                            // $find_data_payments_of_client->debugDumpParams();
-                            // die;
-
-                            // $data_payment_of_cliente2 = $find_data_payments_of_client2->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_payment_of_cliente2');
-                            // $find_data_payments_of_client2->debugDumpParams();
-                            // die;
-
-                            // Removi temporario, colocando na linha 192 para evitar um monte de queries.
-                            $data_find_reservation_primary = $find_reservation_primary->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_find_reservation_primary');
-                            // $find_reservation_primary->debugDumpParams();
-
-                            if ($data_find_reservation_primary && date("d/m/Y", strtotime($data_find_reservation_primary['dateinput'])) <> '31/12/1969'){
-
-                            } else {
-                                continue;
-                            }
-
-                            $find_reservation_secundarys = $pdo->prepare('select * from `ct_recentlyadd` ra left join `ct_servico` s on ra.idservice = s.id where ra.idrecently = :idprimary');
-                            $find_reservation_secundarys->execute(array(":idprimary" => $data_find_reservation_primary['id']));
-                            $count = $find_reservation_secundarys->rowCount();
-
-                            $total_one = (($data_find_reservation_primary['valueservice'] * $data_find_reservation_primary['qtdpax']) + (($data_find_reservation_primary['valueservice'] / 2) * $data_find_reservation_primary['qtdchild']));
-
-                            $total_recebido += $data_payment_of_cliente['valor'];
-                            $total_general += $total_one;
-
-                            // echo'<pre>';print_r($data_payment_of_cliente);echo'</pre>';
-                            // die;
-
-                        ?>
-                            <?php if ($data_find_reservation_primary && date("d/m/Y", strtotime($data_find_reservation_primary['dateinput'])) <> '31/12/1969') { ?>
-                                <tr>
-                                    <td><?php echo (date("d/m/Y", strtotime($data_find_reservation_primary['dateinput']))); ?></td>
-                                    <td><?php echo ($item->numbervoucher); ?></td>
-                                    <td><?php echo (utf8_encode($data_find_reservation_primary['cliente'])); ?></td>
-                                    <td><?php echo (utf8_encode($data_find_reservation_primary['pax'])); ?></td>
-                                    <td><?php echo ($data_find_reservation_primary['qtdpax'] . " | " . $data_find_reservation_primary['qtdchild'] . " | " . $data_find_reservation_primary['qtdfree']); ?></td>
-                                    <td><?php echo (strtoupper($data_find_reservation_primary['firstname'] . " " . $data_find_reservation_primary['lastname'])); ?></td>
-                                    <td><?php echo (utf8_encode($data_find_reservation_primary['servico'])); ?></td>
-                                    <td><?php echo ("R$ " . number_format($data_find_reservation_primary['valueservice'], 2, ",", ".")); ?></td>
-                                    <td><?php echo ("R$ " . number_format($total_one, 2, ",", ".")); ?></td>
-                                    <td><?php echo ($data_payment_of_cliente2) ? (strtoupper($data_payment_of_cliente2['firstname'] . " " . $data_payment_of_cliente2['lastname'])) : null; ?></td>
-                                    <td><?php echo (date("d/m/Y", strtotime($data_find_reservation_primary['data_integracao']))); ?></td>
-                                    <td><?php echo ("R$ " . number_format($data_payment_of_cliente['valor'], 2, ",", ".")); ?></td>
-                                    <td><?php echo ($data_find_reservation_primary['situacao']); ?></td>
-                                </tr>
-                                <?php if ($count >= 1) { ?>
-                                    <?php while ($data_find_reservation_secundarys = $find_reservation_secundarys->fetch(PDO::FETCH_ASSOC)) {
-                                        // print_r('$data_find_reservation_secundarys');
-                                        // $find_reservation_secundarys->debugDumpParams();
-
-                                        $total_two = (($data_find_reservation_secundarys['valueservice'] * $data_find_reservation_secundarys['qpax']) + (($data_find_reservation_secundarys['valueservice'] / 2) *
-                                            $data_find_reservation_secundarys['qchild']));
-                                        $total_general += $total_two;
-                                    ?>
-                                        <tr>
-                                            <td><?php echo (date("d/m/Y", strtotime($data_find_reservation_secundarys['dateinput']))); ?></td>
-                                            <td><?php echo ($item->numbervoucher); ?></td>
-                                            <td><?php echo (utf8_encode($data_find_reservation_primary['cliente'])); ?></td>
-                                            <td><?php echo (utf8_encode($data_find_reservation_primary['pax'])); ?></td>
-                                            <td><?php echo ($data_find_reservation_secundarys['qpax'] . " | " . $data_find_reservation_secundarys['qchild'] . " | " . $data_find_reservation_secundarys['qfree']); ?></td>
-                                            <td><?php echo (strtoupper($data_find_reservation_primary['firstname'] . " " . $data_find_reservation_primary['lastname'])); ?></td>
-                                            <td><?php echo (utf8_encode($data_find_reservation_secundarys['fullname'])); ?></td>
-                                            <td><?php echo ("R$ " . number_format($data_find_reservation_secundarys['valueservice'], 2, ",", ".")); ?></td>
-                                            <td><?php echo ("R$ " . number_format($total_two, 2, ",", ".")); ?></td>
-                                            <td><?php echo (strtoupper($data_payment_of_cliente2['firstname'] . " " . $data_payment_of_cliente2['lastname'])); ?></td>
-                                            <td><?php echo (date("d/m/Y", strtotime($data_find_reservation_primary['data_integracao']))); ?></td>
-                                            <td>-</td>
-                                            <td><?php echo ($data_find_reservation_primary['situacao']); ?></td>
-                                        </tr>
-                                    <?php  } ?>
-
-                                <?php  } ?>
-                            <?php } ?>
-
-                        <?php } ?>
-                    </tbody>
-                </table>
-                <?php if ($verify_caixa > 0 and !empty($verify_caixa)) { ?>
-                    <p>Despesas</p>
-
-                    <table id="" class="highlight">
-                        <thead>
-                            <tr>
-                                <th>Data Venci.</th>
-                                <th>Data Pag.</th>
-                                <th>Data Compe.</th>
-                                <th>Nome</th>
-                                <th>Descrição</th>
-                                <th>Favorecido</th>
-                                <th>Tipo</th>
-                                <th>Forma de Pagamento.</th>
-                                <th>Plano de C.</th>
-                                <th>Valor</th>
-                                <th>Situação</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($registroCaixa as $item) {
-                                $total_out += $item->valor ?>
-                                <tr>
-                                    <td><?php echo (date("d-m-Y", strtotime($item->datevencimento))); ?></td>
-                                    <td><?php echo (date("d-m-Y", strtotime($item->datepagamento))); ?></td>
-                                    <td><?php echo (date("d-m-Y", strtotime($item->datecompetencia))); ?></td>
-                                    <td><?php echo ($item->nome); ?></td>
-                                    <td><?php echo ($item->descricao); ?></td>
-                                    <td><?php echo (utf8_encode($item->fornecedor)); ?></td>
-                                    <td><?php echo (utf8_encode($item->tipo)); ?></td>
-                                    <td><?php echo ($item->conta); ?></td>
-                                    <td><?php echo ($item->plano); ?></td>
-                                    <td><?php echo ("R$" . number_format($item->valor, 2, ",", ".")); ?></td>
-                                    <td>
-                                        <?php echo ($item->situacao); ?>
-                                    </td>
-                                </tr>
-                            <?php } ?>
-                        </tbody>
-                    </table>
-                <?php } ?>
-                <br>
-                <p>Totais</p>
-                <br>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Total vendido</th>
-                            <th>Total recebido</th>
-                            <th>Tranferência</th>
-                            <th>Em Cartão de Crédito</th>
-                            <th>Em Cartão de Débito</th>
-                            <th>Pag seguro</th>
-                            <th>Em Dinheiro</th>
-                            <th>Posto Panda</th>
-                            <th>Cortesia</th>
-                            <th>Total de Despesas</th>
-                            <th>Saldo</th>
-                            <th>Dinheiro Liquido</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><?php echo ("R$ " . number_format($total_general, 2, ",", ".")) ?></td>
-                            <td><?php echo ("R$ " . number_format($total_recebido, 2, ",", ".")) ?></td>
-                            <td><?php echo ("R$ " . number_format($data_tranferenci['totaltransferencia'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($data_cartao_credito['totalcartaocredito'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($data_cartao_debito['totalcartaodebito'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($data_paypal['totalpaypal'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($data_dinheiro['totaldinheiro'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($data_panda['totalpanda'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($data_cortesia['totalcortesia'], 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_out, 2, ",", ".")) ?></td>
-                            <td><?php echo ("R$ " . number_format($total_recebido - $total_out, 2, ",", ".")) ?></td>
-                            <td><?php echo ("R$ " . number_format($data_dinheiro['totaldinheiro'] - $total_out, 2, ",", ".")) ?></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </body>
-
-        </html>
-
-    <?php } elseif ($verify_caixa > 0) { ?>
-        <html xmlns="http://www.w3.org/1999/xhtml">
-
-        <head>
-            <meta charset="utf-8">
-            <title>Relatório de conferência do vendedor</title>
-            <link rel="stylesheet" href="materialize.min.css">
-        </head>
-        <style>
-            th,
-            td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                font-size: 10px;
-            }
-
-            td#desc {
-                font-weight: bold;
-            }
-        </style>
-
-        <body>
-            <div class="container">
-                <img style="width: 700px;" id="logo" src="../../images/logo.png" />
-
-                <p>Despesas</p>
-
-                <table id="" class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Data Venci.</th>
-                            <th>Data Pag.</th>
-                            <th>Data Compe.</th>
-                            <th>Nome</th>
-                            <th>Descrição</th>
-                            <th>Favorecido</th>
-                            <th>Tipo</th>
-                            <th>Forma de Pagamento</th>
-                            <th>Plano de C.</th>
-                            <th>Valor</th>
-                            <th>Situação</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($registroCaixa as $item) {
-                            $total_out += $item->valor; ?>
-                            <tr>
-                                <td><?php echo (date("d-m-Y", strtotime($item->datevencimento))); ?></td>
-                                <td><?php echo (date("d-m-Y", strtotime($item->datepagamento))); ?></td>
-                                <td><?php echo (date("d-m-Y", strtotime($item->datecompetencia))); ?></td>
-                                <td><?php echo ($item->nome); ?></td>
-                                <td><?php echo ($item->descricao); ?></td>
-                                <td><?php echo (utf8_encode($item->fornecedor)); ?></td>
-                                <td><?php echo (utf8_encode($item->tipo)); ?></td>
-                                <td><?php echo ($item->conta); ?></td>
-                                <td><?php echo ($item->plano); ?></td>
-                                <td><?php echo ("R$" . number_format($item->valor, 2, ",", ".")); ?></td>
-                                <td>
-                                    <?php echo ($item->situacao); ?>
-                                </td>
-                            </tr>
-                        <?php } ?>
-                    </tbody>
-                </table>
-                <p>Totais</p>
-                <br>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Total de Despesas</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><?php echo ("R$ " . number_format($total_out, 2, ",", ".")) ?></td>
-
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </body>
-
-        </html>
-    <?php } else { ?>
-        <html xmlns="http://www.w3.org/1999/xhtml">
-
-        <head>
-            <meta charset="utf-8">
-            <title>Relatório de conferência do vendedor</title>
-            <link rel="stylesheet" href="materialize.min.css">
-        </head>
-        <style>
-            th,
-            td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                font-size: 10px;
-            }
-
-            td#desc {
-                font-weight: bold;
-            }
-        </style>
-
-        <body>
-            <div class="container">
-                <img style="width: 700px; margin-left: 50px; " id="logo" src="../../images/logo.png" />
-
-                <hr>
-                <h3>Não encontramos pagamentos/reservas realizados por esse vendedor(a)</h3>
-            </div>
-        </body>
-
-        </html>
-    <?php } ?>
-<?php } else {
-
-?>
-    <html xmlns="http://www.w3.org/1999/xhtml">
-
-    <head>
-        <meta charset="utf-8">
-        <title>Relatório de conferência do vendedor</title>
-        <link rel="stylesheet" href="materialize.min.css">
-    </head>
+        <?php if (!empty($registroCaixa)): ?>
+            <h3>Nenhum pagamento encontrado no período. Despesas abaixo:</h3>
+        <?php else: ?>
+            <h3>Não encontramos pagamentos/reservas realizados no período informado.</h3>
+        <?php endif ?>
+        </body></html>
+        <?php exit;
+    }
+
+    // 3. Bulk: detalhes das reservas
+    $inV = implode(',', array_fill(0, count($vouchers), '?'));
+    $stRes = $pdo->prepare(
+        "SELECT r.id, r.dateinput, r.numbervoucher, c.namefantazia AS cliente, r.pax,
+                s.fullname AS servico, r.qtdpax, r.qtdchild, r.qtdfree,
+                si.nameinvoice AS situacao, r.valueservice, r.idstatusinvoice,
+                u.firstname, u.lastname, r.data_integracao
+         FROM ct_reserva r
+         LEFT JOIN ct_cliente c       ON c.id  = r.idcliente
+         LEFT JOIN ct_servico s       ON s.id  = r.idservico
+         LEFT JOIN ct_usuario u       ON u.id  = r.idresponsavel
+         LEFT JOIN ct_statusinvoice si ON si.id = r.idstatusinvoice
+         WHERE r.numbervoucher IN ($inV)"
+    );
+    $stRes->execute($vouchers);
+    $reservas = [];
+    foreach ($stRes->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $reservas[$row['numbervoucher']] = $row;
+    }
+
+    // 4. Bulk: total pago por voucher (no período, filtrado)
+    $pagWhere  = "cfc.numbervoucher IN ($inV) AND cfc.datacredit >= ? AND cfc.datacredit <= ?";
+    $pagParams = array_merge($vouchers, [$inicio, $fim]);
+    if ($responsavel > 0) { $pagWhere .= " AND cfc.idusr = ?"; $pagParams[] = $responsavel; }
+    if ($agencia > 0)     { $pagWhere .= " AND r.idcliente = ?"; $pagParams[] = $agencia; }
+
+    $joinRes = $agencia > 0
+        ? "LEFT JOIN ct_reserva r ON r.numbervoucher = cfc.numbervoucher"
+        : '';
+
+    $stPag = $pdo->prepare(
+        "SELECT cfc.numbervoucher, SUM(cfc.valuecredit) AS valor,
+                u.firstname, u.lastname, cfc.datacredit AS dia, cc.name AS pagamento
+         FROM ct_createfaturacredit cfc
+         LEFT JOIN ct_currentaccount cc ON cc.id = cfc.idaccountcurrent
+         LEFT JOIN ct_usuario u         ON u.id  = cfc.idusr
+         $joinRes
+         WHERE $pagWhere
+         GROUP BY cfc.numbervoucher, u.firstname, u.lastname, cfc.datacredit, cc.name"
+    );
+    $stPag->execute($pagParams);
+    $pagamentos = [];
+    foreach ($stPag->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $pagamentos[$row['numbervoucher']] = $row;
+    }
+
+    // 5. Bulk: serviços adicionais
+    $reservaIds = array_filter(array_map(fn($v) => $reservas[$v]['id'] ?? null, $vouchers));
+    $addRows = [];
+    if (!empty($reservaIds)) {
+        $inR   = implode(',', array_fill(0, count($reservaIds), '?'));
+        $stAdd = $pdo->prepare(
+            "SELECT ra.idrecently, ra.dateinput, ra.valueservice, ra.qpax, ra.qchild, ra.qfree,
+                    s.fullname
+             FROM ct_recentlyadd ra
+             LEFT JOIN ct_servico s ON s.id = ra.idservice
+             WHERE ra.idrecently IN ($inR)"
+        );
+        $stAdd->execute(array_values($reservaIds));
+        foreach ($stAdd->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $addRows[(int)$row['idrecently']][] = $row;
+        }
+    }
+
+    // 6. Totais por método de pagamento (1 query no lugar de 7)
+    $totParams  = [$inicio, $fim];
+    $totWhere   = "datacredit >= ? AND datacredit <= ?";
+    if ($responsavel > 0) { $totWhere .= " AND idusr = ?"; $totParams[] = $responsavel; }
+
+    $stTot = $pdo->prepare(
+        "SELECT
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 36 THEN valuecredit END), 0) AS transferencia,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 24 THEN valuecredit END), 0) AS cartao_credito,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 25 THEN valuecredit END), 0) AS cartao_debito,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 22 THEN valuecredit END), 0) AS paypal,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 18 THEN valuecredit END), 0) AS dinheiro,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 41 THEN valuecredit END), 0) AS linkstone,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 23 THEN valuecredit END), 0) AS panda,
+            COALESCE(SUM(CASE WHEN idaccountcurrent = 39 THEN valuecredit END), 0) AS cortesia
+         FROM ct_createfaturacredit WHERE $totWhere"
+    );
+    $stTot->execute($totParams);
+    $totais = $stTot->fetch(PDO::FETCH_ASSOC);
+
+    // Calcula totais globais iterando registros
+    $totalGeral    = 0.0;
+    $totalRecebido = 0.0;
+    foreach ($vouchers as $v) {
+        $res = $reservas[$v] ?? null;
+        if (!$res || date('d/m/Y', strtotime($res['dateinput'])) === '31/12/1969') {
+            continue;
+        }
+        $totalGeral    += ($res['valueservice'] * $res['qtdpax']) + (($res['valueservice'] / 2) * $res['qtdchild']);
+        $totalRecebido += (float)($pagamentos[$v]['valor'] ?? 0);
+        foreach ($addRows[(int)$res['id']] ?? [] as $add) {
+            $totalGeral += ($add['valueservice'] * $add['qpax']) + (($add['valueservice'] / 2) * $add['qchild']);
+        }
+    }
+
+    logAudit($pdo, 'RELATORIO-PAGAMENTO',
+        "Rel. por pagamento gerado: $inicio a $fim | " . count($vouchers) . " vouchers"
+    );
+    ?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <title>Relatório Conferência – Pagamento</title>
     <style>
-        th,
-        td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            font-size: 10px;
-        }
-
-        td#desc {
-            font-weight: bold;
-        }
+        @page { size: A4 landscape; margin: 0; }
+        @media print { body { margin: 8mm 10mm; } .no-print { display: none; } }
+        body  { font-family: Arial, sans-serif; font-size: 10px; color: #222; margin: 12mm 14mm; }
+        img   { width: 240px; margin-bottom: 6px; }
+        h2    { font-size: 12px; margin: 0 0 2px; }
+        p.periodo { font-size: 10px; color: #555; margin: 0 0 10px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th  { background: #1e4770; color: #fff; font-size: 9px; padding: 5px 4px; }
+        td  { border-bottom: 1px solid #e5e7eb; padding: 4px; font-size: 9px; }
+        tr.add-row td { background: #f8fafc; color: #555; }
+        tfoot td { font-weight: bold; background: #f1f5f9; border-top: 2px solid #1e4770; padding: 6px 4px; }
+        h4  { font-size: 11px; margin: 12px 0 4px; color: #1e4770; }
+        .btn-print { display: inline-block; margin: 14px 0; padding: 8px 20px; background: #1e4770;
+                     color: #fff; border: 0; border-radius: 8px; cursor: pointer; font-weight: 700; }
     </style>
+</head>
+<body>
+<button class="btn-print no-print" onclick="window.print()">Imprimir / Salvar PDF</button>
+<img src="../../images/logo.png" alt="Logo">
+<h2>Relatório de Conferência por Data de Pagamento</h2>
+<p class="periodo">Período: <?= date("d/m/Y", strtotime($inicio)) ?> até <?= date("d/m/Y", strtotime($fim)) ?> &nbsp;|&nbsp; Impresso em: <?= date("d/m/Y H:i") ?></p>
 
-    <body>
-        <div class="container">
-            <img style="width: 700px; margin-left: 50px; " id="logo" src="../../images/logo.png" />
+<table>
+    <thead>
+        <tr>
+            <th>Embarque</th><th>Voucher</th><th>Agência</th><th>Pax</th><th>P|C|F</th>
+            <th>Vendedor</th><th>Serviço</th><th>Valor Unit.</th><th>Valor Total</th>
+            <th>Recebido por</th><th>Pago em</th><th>Valor Recebido</th><th>Situação</th>
+        </tr>
+    </thead>
+    <tbody>
+    <?php foreach ($vouchers as $v):
+        $res = $reservas[$v] ?? null;
+        if (!$res || date('d/m/Y', strtotime($res['dateinput'])) === '31/12/1969') continue;
+        $pag   = $pagamentos[$v] ?? [];
+        $adds  = $addRows[(int)$res['id']] ?? [];
+        $total = ($res['valueservice'] * $res['qtdpax']) + (($res['valueservice'] / 2) * $res['qtdchild']);
+    ?>
+    <tr>
+        <td><?= date("d/m/Y", strtotime($res['dateinput'])) ?></td>
+        <td><?= htmlspecialchars($v) ?></td>
+        <td><?= htmlspecialchars($res['cliente']) ?></td>
+        <td><?= htmlspecialchars($res['pax']) ?></td>
+        <td><?= (int)$res['qtdpax'] ?> | <?= (int)$res['qtdchild'] ?> | <?= (int)$res['qtdfree'] ?></td>
+        <td><?= htmlspecialchars(strtoupper($res['firstname'] . ' ' . $res['lastname'])) ?></td>
+        <td><?= htmlspecialchars($res['servico']) ?></td>
+        <td>R$ <?= number_format((float)$res['valueservice'], 2, ',', '.') ?></td>
+        <td>R$ <?= number_format($total, 2, ',', '.') ?></td>
+        <td><?= htmlspecialchars(strtoupper(($pag['firstname'] ?? '') . ' ' . ($pag['lastname'] ?? ''))) ?></td>
+        <td><?= !empty($pag['dia']) ? date("d/m/Y", strtotime($pag['dia'])) : '-' ?></td>
+        <td>R$ <?= number_format((float)($pag['valor'] ?? 0), 2, ',', '.') ?></td>
+        <td><?= htmlspecialchars($res['situacao']) ?></td>
+    </tr>
+    <?php foreach ($adds as $add):
+        $addTotal = ($add['valueservice'] * $add['qpax']) + (($add['valueservice'] / 2) * $add['qchild']); ?>
+    <tr class="add-row">
+        <td><?= date("d/m/Y", strtotime($add['dateinput'])) ?></td>
+        <td><?= htmlspecialchars($v) ?></td>
+        <td><?= htmlspecialchars($res['cliente']) ?></td>
+        <td><?= htmlspecialchars($res['pax']) ?></td>
+        <td><?= (int)$add['qpax'] ?> | <?= (int)$add['qchild'] ?> | <?= (int)$add['qfree'] ?></td>
+        <td><?= htmlspecialchars(strtoupper($res['firstname'] . ' ' . $res['lastname'])) ?></td>
+        <td><?= htmlspecialchars($add['fullname']) ?></td>
+        <td>R$ <?= number_format((float)$add['valueservice'], 2, ',', '.') ?></td>
+        <td>R$ <?= number_format($addTotal, 2, ',', '.') ?></td>
+        <td>-</td><td>-</td><td>-</td>
+        <td><?= htmlspecialchars($res['situacao']) ?></td>
+    </tr>
+    <?php endforeach ?>
+    <?php endforeach ?>
+    </tbody>
+</table>
 
-            <hr>
-            <p><?php echo (("Relatório de Conferência de: " .
-                    date("d/m/Y ", strtotime($inicio)) . " ate " . date("d/m/Y ", strtotime($fim))) . " Por vendedor."); ?> </p><br>
-            <p style="font-size: 9px; margin-top: -20px;">Impresso em: <?php echo (date("d/m/Y - H:i:s")); ?></p>
-            <?php if ($agencia == 0) { ?>
-                <h5>Recebido</h5>
-                <hr>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Operador</th>
-                            <th>Recebido</th>
-                            <th>Tranferência</th>
-                            <th>Em Cartão de Crédito</th>
-                            <th>Em Cartão de Débito</th>
-                            <th>Pag seguro</th>
-                            <th>Em Dinheiro</th>
-                            <th>Posto Panda</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($data_find_file_salesmen as $item) {
-                            $moneyop = $pdo->prepare('select sum(cfc.valuecredit) as tot, u.firstname, u.lastname from `ct_createfaturacredit` cfc left join ct_usuario u on u.id = cfc.idusr  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id ');
-                            $moneyop->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr
-                                )
-                            );
-                            $data_moneyop = $moneyop->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_moneyop');
-                            // $moneyop->debugDumpParams();
+<?php if (!empty($registroCaixa)): ?>
+<h4>Despesas</h4>
+<table>
+    <thead>
+        <tr>
+            <th>Data Venci.</th><th>Data Pag.</th><th>Nome</th><th>Descrição</th>
+            <th>Favorecido</th><th>Tipo</th><th>Forma Pagamento</th><th>Plano</th>
+            <th>Valor</th><th>Situação</th>
+        </tr>
+    </thead>
+    <tbody>
+    <?php foreach ($registroCaixa as $r): ?>
+    <tr>
+        <td><?= date("d/m/Y", strtotime($r->datevencimento)) ?></td>
+        <td><?= date("d/m/Y", strtotime($r->datepagamento)) ?></td>
+        <td><?= htmlspecialchars($r->nome) ?></td>
+        <td><?= htmlspecialchars($r->descricao) ?></td>
+        <td><?= htmlspecialchars($r->fornecedor) ?></td>
+        <td><?= htmlspecialchars($r->tipo) ?></td>
+        <td><?= htmlspecialchars($r->conta) ?></td>
+        <td><?= htmlspecialchars($r->plano) ?></td>
+        <td>R$ <?= number_format((float)$r->valor, 2, ',', '.') ?></td>
+        <td><?= htmlspecialchars($r->situacao) ?></td>
+    </tr>
+    <?php endforeach ?>
+    </tbody>
+</table>
+<?php endif ?>
 
-                            $tot_dia += $data_moneyop['tot'];
-
-                            $transferencia = $pdo->prepare('select sum(cfc.valuecredit) as totaltransferencia from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                            $transferencia->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 36
-                                )
-                            );
-                            $data_tranferenci = $transferencia->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_tranferenci');
-                            // $transferencia->debugDumpParams();
-
-                            $total_transferencia += $data_tranferenci['totaltransferencia'];
-
-                            $cartao_credito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaocredito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id and idaccountcurrent = :forma ');
-                            $cartao_credito->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 24,
-                                )
-                            );
-                            $data_cartao_credito = $cartao_credito->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_cartao_credito');
-                            // $find_file_salesmen->debugDumpParams();
-
-                            $total_cartaocredito += $data_cartao_credito['totalcartaocredito'];
-
-                            $cartao_debito = $pdo->prepare('select sum(cfc.valuecredit) as totalcartaodebito from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id and idaccountcurrent = :forma ');
-                            $cartao_debito->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 25,
-                                )
-                            );
-                            $data_cartao_debito = $cartao_debito->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_cartao_debito');
-                            // $cartao_debito->debugDumpParams();
-
-                            $total_cartaodebito += $data_cartao_debito['totalcartaodebito'];
-
-                            $paypal = $pdo->prepare('select sum(cfc.valuecredit) as totalpaypal from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                            $paypal->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 22,
-                                )
-                            );
-                            $data_paypal = $paypal->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_paypal');
-                            // $paypal->debugDumpParams();
-
-                            $total_paypal += $data_paypal['totalpaypal'];
-
-                            $dinheiro = $pdo->prepare('select sum(cfc.valuecredit) as totaldinheiro from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id   and idaccountcurrent = :forma ');
-                            $dinheiro->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 18,
-                                )
-                            );
-
-                            $data_dinheiro = $dinheiro->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_dinheiro');
-                            // $dinheiro->debugDumpParams();
-
-                            $total_dinheiro += $data_dinheiro['totaldinheiro'];
-
-                            // LINKSTONE
-                            $linkStone = $pdo->prepare('select sum(cfc.valuecredit) as totallinkstone from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id   and idaccountcurrent = :forma ');
-                            $linkStone->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 41,
-                                )
-                            );
-                            $data_linkStone = $linkStone->fetch(PDO::FETCH_ASSOC);
-                            $total_linkStone += $data_linkStone['totallinkstone'];
-
-                            $panda = $pdo->prepare('select sum(cfc.valuecredit) as totalpanda from `ct_createfaturacredit` cfc  where datacredit >= :inicio and datacredit <= :fim and cfc.idusr = :id  and idaccountcurrent = :forma ');
-                            $panda->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item->idusr,
-                                    ":forma"  => 23,
-                                )
-                            );
-                            $data_panda = $panda->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_panda');
-                            // $panda->debugDumpParams();
-
-                            $total_panda += $data_panda['totalpanda'];
-
-                        ?>
-                            <tr>
-                                <td><?php echo (strtoupper($data_moneyop['firstname'] . " " . $data_moneyop['lastname'])); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_moneyop['tot'], 2, ",", ".")); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_tranferenci['totaltransferencia'], 2, ",", ".")); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_cartao_credito['totalcartaocredito'], 2, ",", ".")); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_cartao_debito['totalcartaodebito'], 2, ",", ".")); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_paypal['totalpaypal'], 2, ",", ".")); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_dinheiro['totaldinheiro'], 2, ",", ".")); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_panda['totalpanda'], 2, ",", ".")); ?></td>
-                            </tr>
-                        <?php } ?>
-                    </tbody>
-                </table>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Total Recebido</th>
-                            <th>Total Tranferência</th>
-                            <th>Total Cartão de Crédito</th>
-                            <th>Total Cartão de Débito</th>
-                            <th>Total Pag seguro</th>
-                            <th>Total Em Dinheiro</th>
-                            <th>Total Posto Panda</th>
-                            <th>Total Link Stone</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><?php echo ("R$ " . number_format($tot_dia, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_transferencia, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_cartaocredito, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_cartaodebito, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_paypal, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_dinheiro, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_panda, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_linkStone, 2, ",", ".")); ?></td>
-                        </tr>
-                    </tbody>
-                </table>
-                <br>
-                <h5>Despesas</h5>
-                <hr>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Operador</th>
-                            <th>Despesas</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($data_find_despesas as $item2) {
-                            $despesas = $pdo->prepare('select sum(c.valor) as tot, u.firstname, u.lastname from `ct_caixa` c left join ct_usuario u on u.id = c.idusr  where c.datepagamento >= :inicio and c.datepagamento <= :fim and c.idusr = :id  and c.`idtipo` = 2 ');
-                            $despesas->execute(
-                                array(
-                                    ":inicio" => $inicio,
-                                    ":fim"    => $fim,
-                                    ":id"     => $item2->idusr
-                                )
-                            );
-                            $data_g_despesas = $despesas->fetch(PDO::FETCH_ASSOC);
-                            // print_r('$data_g_despesas');
-                            // $despesas->debugDumpParams();
-
-                            $total_despesas += $data_g_despesas['tot'];
-
-                        ?>
-                            <tr>
-                                <td><?php echo (strtoupper($data_g_despesas['firstname'] . " " . $data_g_despesas['lastname'])); ?></td>
-                                <td><?php echo ("R$ " . number_format($data_g_despesas['tot'], 2, ",", ".")); ?></td>
-                            </tr>
-                        <?php } ?>
-                    </tbody>
-                </table>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Total de Recebido</th>
-                            <th>Total de Despesas</th>
-                            <th>Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><?php echo ("R$ " . number_format($tot_dia, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($total_despesas, 2, ",", ".")); ?></td>
-                            <td><?php echo ("R$ " . number_format($tot_dia - $total_despesas, 2, ",", ".")); ?></td>
-                        </tr>
-                    </tbody>
-                </table>
-            <?php } else { ?>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Agência</th>
-                            <th>Operador</th>
-                            <th>Voucher</th>
-                            <th>Subtotal</th>
-
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php $total = 0;
-                        foreach ($reservas as $item) {
-                            $total += $item->valuecredit; ?>
-                            <tr>
-                                <td><?php echo ($item->fullname); ?></td>
-                                <td><?php echo (strtoupper(utf8_encode($item->firstname . " " . $item->lastname))); ?></td>
-                                <td><?php echo ($item->numbervoucher); ?></td>
-                                <td><?php echo ("R$ " . number_format($item->valuecredit, 2, ",", ".")); ?></td>
-                            </tr>
-                        <?php } ?>
-
-                    </tbody>
-                </table>
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>Total Vendido</th>
-                        </tr>
-
-
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><?php echo ("R$ " . number_format($total, 2, ",", ".")); ?></td>
-                        </tr>
-                    </tbody>
-                </table>
-            <?php } ?>
-
-        </div>
-    </body>
-
-    </html>
-<?php } ?>
+<h4>Totais</h4>
+<table>
+    <thead>
+        <tr>
+            <th>Total Vendido</th><th>Total Recebido</th><th>Transferência</th>
+            <th>Cartão Crédito</th><th>Cartão Débito</th><th>Pag Seguro</th>
+            <th>Dinheiro</th><th>Panda</th><th>Cortesia</th><th>Link Stone</th>
+            <th>Despesas</th><th>Saldo</th><th>Dinheiro Líquido</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>R$ <?= number_format($totalGeral,              2, ',', '.') ?></td>
+            <td>R$ <?= number_format($totalRecebido,           2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['transferencia'],  2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['cartao_credito'], 2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['cartao_debito'],  2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['paypal'],         2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['dinheiro'],       2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['panda'],          2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['cortesia'],       2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['linkstone'],      2, ',', '.') ?></td>
+            <td>R$ <?= number_format($totalOut,                2, ',', '.') ?></td>
+            <td>R$ <?= number_format($totalRecebido - $totalOut, 2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)$totais['dinheiro'] - $totalOut, 2, ',', '.') ?></td>
+        </tr>
+    </tbody>
+</table>
+<script>window.print();</script>
+</body>
+</html>
 
 <?php
-/*
-if($agencia > 0)
-{
-    $html = ob_get_clean();
+// ---------------------------------------------------------------------------
+// TIPO 2 — Resumido por vendedor
+// ---------------------------------------------------------------------------
+} else {
 
-//------------------------------------------------------------------------------------------------------------
-    $arquivo = "relatorio.pdf" ;
-    define( '_MPDF_TTFONTDATAPATH', sys_get_temp_dir() );
-    require_once( 'pdf/mpdf.php' );
-    $mpdf = new mPDF();
-    $mpdf->SetTitle( "relatório" );
-    $mpdf->SetAuthor( 'Cassi Turismo' );
-    $html = mb_convert_encoding($html, 'UTF-8', 'ISO-8859-1');
-    $mpdf->WriteHTML( $html, 0 );
-    $css = file_get_contents("../.././vendor/bootstrap-4.1/bootstrap.min.css");
-    $mpdf->WriteHTML($css,1);
-    $mpdf->Output( $arquivo, 'I' );
-    $mpdf->charset_in = 'windows-1252';
-}*/
+    // 1 query: todos os vendedores + totais por método de pagamento
+    $stVendedores = $pdo->prepare(
+        "SELECT cfc.idusr, u.firstname, u.lastname,
+                COALESCE(SUM(cfc.valuecredit), 0) AS total,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 36 THEN valuecredit END), 0) AS transferencia,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 24 THEN valuecredit END), 0) AS cartao_credito,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 25 THEN valuecredit END), 0) AS cartao_debito,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 22 THEN valuecredit END), 0) AS paypal,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 18 THEN valuecredit END), 0) AS dinheiro,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 41 THEN valuecredit END), 0) AS linkstone,
+                COALESCE(SUM(CASE WHEN idaccountcurrent = 23 THEN valuecredit END), 0) AS panda
+         FROM ct_createfaturacredit cfc
+         LEFT JOIN ct_usuario u ON u.id = cfc.idusr
+         WHERE cfc.datacredit >= ? AND cfc.datacredit <= ?
+         GROUP BY cfc.idusr, u.firstname, u.lastname
+         ORDER BY u.firstname"
+    );
+    $stVendedores->execute([$inicio, $fim]);
+    $vendedores = $stVendedores->fetchAll(PDO::FETCH_ASSOC);
 
+    // 1 query: despesas por vendedor
+    $stDesp = $pdo->prepare(
+        "SELECT c.idusr, u.firstname, u.lastname, COALESCE(SUM(c.valor), 0) AS tot
+         FROM ct_caixa c
+         LEFT JOIN ct_usuario u ON u.id = c.idusr
+         WHERE c.datepagamento >= ? AND c.datepagamento <= ? AND c.idtipo = 2
+         GROUP BY c.idusr, u.firstname, u.lastname"
+    );
+    $stDesp->execute([$inicio, $fim]);
+    $despesasPorUsuario = [];
+    $totalDespesas = 0.0;
+    foreach ($stDesp->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $despesasPorUsuario[$row['idusr']] = $row;
+        $totalDespesas += (float)$row['tot'];
+    }
+
+    // Totais gerais
+    $totDia = array_sum(array_column($vendedores, 'total'));
+
+    if ($agencia > 0) {
+        // Resumo por agência
+        $stAg = $pdo->prepare(
+            "SELECT cf.numbervoucher, cf.valuecredit,
+                    c.fullname, u.firstname, u.lastname
+             FROM ct_createfaturacredit cf
+             LEFT JOIN ct_reserva r ON r.numbervoucher = cf.numbervoucher
+             LEFT JOIN ct_cliente c ON c.id = r.idcliente
+             LEFT JOIN ct_usuario u ON u.id = r.idresponsavel
+             WHERE cf.datacredit >= ? AND cf.datacredit <= ?
+               AND r.idstatus <> 2 AND r.idcliente = ? $sqlEmpresa"
+        );
+        $stAg->execute([$inicio, $fim, $agencia]);
+        $reservasAgencia = $stAg->fetchAll(PDO::FETCH_OBJ);
+        ?>
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório Resumido – Agência</title>
+<style>
+    @page { size: A4 landscape; margin: 0; }
+    @media print { body { margin: 8mm 10mm; } .no-print { display: none; } }
+    body { font-family: Arial, sans-serif; font-size: 10px; margin: 12mm 14mm; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    th { background: #1e4770; color: #fff; padding: 5px; font-size: 9px; }
+    td { border-bottom: 1px solid #e5e7eb; padding: 4px; font-size: 9px; }
+    tfoot td { font-weight: bold; background: #f1f5f9; border-top: 2px solid #1e4770; }
+    .btn-print { display: inline-block; margin: 12px 0; padding: 8px 20px; background: #1e4770;
+                 color: #fff; border: 0; border-radius: 8px; cursor: pointer; font-weight: 700; }
+</style></head>
+<body>
+<button class="btn-print no-print" onclick="window.print()">Imprimir / Salvar PDF</button>
+<img src="../../images/logo.png" alt="Logo" style="width:240px;margin-bottom:6px"><br>
+<strong>Relatório Resumido por Agência — <?= date("d/m/Y", strtotime($inicio)) ?> a <?= date("d/m/Y", strtotime($fim)) ?></strong>
+<p style="font-size:9px;color:#555">Impresso em: <?= date("d/m/Y H:i") ?></p>
+<table>
+    <thead><tr><th>Agência</th><th>Operador</th><th>Voucher</th><th>Subtotal</th></tr></thead>
+    <tbody>
+    <?php $totalAgencia = 0.0; foreach ($reservasAgencia as $item): $totalAgencia += (float)$item->valuecredit; ?>
+    <tr>
+        <td><?= htmlspecialchars($item->fullname) ?></td>
+        <td><?= htmlspecialchars(strtoupper($item->firstname . ' ' . $item->lastname)) ?></td>
+        <td><?= htmlspecialchars($item->numbervoucher) ?></td>
+        <td>R$ <?= number_format((float)$item->valuecredit, 2, ',', '.') ?></td>
+    </tr>
+    <?php endforeach ?>
+    </tbody>
+    <tfoot><tr><td colspan="3">Total</td><td>R$ <?= number_format($totalAgencia, 2, ',', '.') ?></td></tr></tfoot>
+</table>
+<script>window.print();</script>
+</body></html>
+        <?php
+    } else {
+        // Resumo por vendedor
+        ?>
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório Resumido – Vendedores</title>
+<style>
+    @page { size: A4 landscape; margin: 0; }
+    @media print { body { margin: 8mm 10mm; } .no-print { display: none; } }
+    body { font-family: Arial, sans-serif; font-size: 10px; margin: 12mm 14mm; }
+    img  { width: 240px; margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    th { background: #1e4770; color: #fff; padding: 5px; font-size: 9px; }
+    td { border-bottom: 1px solid #e5e7eb; padding: 4px; font-size: 9px; }
+    tfoot td { font-weight: bold; background: #f1f5f9; border-top: 2px solid #1e4770; }
+    h4  { font-size: 11px; color: #1e4770; margin: 10px 0 4px; }
+    .btn-print { display: inline-block; margin: 12px 0; padding: 8px 20px; background: #1e4770;
+                 color: #fff; border: 0; border-radius: 8px; cursor: pointer; font-weight: 700; }
+</style></head>
+<body>
+<button class="btn-print no-print" onclick="window.print()">Imprimir / Salvar PDF</button>
+<img src="../../images/logo.png" alt="Logo">
+<strong>Relatório Resumido por Vendedor — <?= date("d/m/Y", strtotime($inicio)) ?> a <?= date("d/m/Y", strtotime($fim)) ?></strong>
+<p style="font-size:9px;color:#555">Impresso em: <?= date("d/m/Y H:i") ?></p>
+
+<h4>Recebimentos por Operador</h4>
+<table>
+    <thead>
+        <tr>
+            <th>Operador</th><th>Total</th><th>Transferência</th><th>Cartão Créd.</th>
+            <th>Cartão Déb.</th><th>Pag Seguro</th><th>Dinheiro</th><th>Panda</th><th>Link Stone</th>
+        </tr>
+    </thead>
+    <tbody>
+    <?php foreach ($vendedores as $v): ?>
+    <tr>
+        <td><?= htmlspecialchars(strtoupper($v['firstname'] . ' ' . $v['lastname'])) ?></td>
+        <td>R$ <?= number_format((float)$v['total'],        2, ',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['transferencia'],2, ',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['cartao_credito'],2,',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['cartao_debito'], 2,',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['paypal'],        2,',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['dinheiro'],      2,',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['panda'],         2,',', '.') ?></td>
+        <td>R$ <?= number_format((float)$v['linkstone'],     2,',', '.') ?></td>
+    </tr>
+    <?php endforeach ?>
+    </tbody>
+    <tfoot>
+        <tr>
+            <td>TOTAL</td>
+            <td>R$ <?= number_format($totDia, 2, ',', '.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'transferencia')),  2,',','.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'cartao_credito')), 2,',','.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'cartao_debito')),  2,',','.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'paypal')),         2,',','.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'dinheiro')),       2,',','.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'panda')),          2,',','.') ?></td>
+            <td>R$ <?= number_format((float)array_sum(array_column($vendedores,'linkstone')),      2,',','.') ?></td>
+        </tr>
+    </tfoot>
+</table>
+
+<?php if (!empty($despesasPorUsuario)): ?>
+<h4>Despesas por Operador</h4>
+<table>
+    <thead><tr><th>Operador</th><th>Despesas</th></tr></thead>
+    <tbody>
+    <?php foreach ($despesasPorUsuario as $d): ?>
+    <tr>
+        <td><?= htmlspecialchars(strtoupper($d['firstname'] . ' ' . $d['lastname'])) ?></td>
+        <td>R$ <?= number_format((float)$d['tot'], 2, ',', '.') ?></td>
+    </tr>
+    <?php endforeach ?>
+    </tbody>
+</table>
+<?php endif ?>
+
+<table>
+    <thead>
+        <tr><th>Total Recebido</th><th>Total Despesas</th><th>Saldo</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>R$ <?= number_format($totDia,             2, ',', '.') ?></td>
+            <td>R$ <?= number_format($totalDespesas,       2, ',', '.') ?></td>
+            <td>R$ <?= number_format($totDia - $totalDespesas, 2, ',', '.') ?></td>
+        </tr>
+    </tbody>
+</table>
+<script>window.print();</script>
+</body></html>
+        <?php
+    }
+}
 ?>
