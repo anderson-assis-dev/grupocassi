@@ -1,0 +1,16 @@
+config.php
+composer.phar
+.DS_Store
+*.log
+*.sql
+*.zip
+*.tar
+*.tar.gz
+*.bak
+*.tmp
+node_modules/
+adm/relatorio/dompdf/vendor/
+adm/relatorio_old/dompdf/vendor/
+vendor/composer/
+vendor/phpmailer/
+config.php

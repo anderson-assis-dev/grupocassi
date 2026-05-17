@@ -1,0 +1,19 @@
+@font-face {font-family: "Antartida Rounded Light"; src: url("//db.onlinewebfonts.com/t/b4733944b11576dc42870d7f5103b282.eot"); src: url("//db.onlinewebfonts.com/t/b4733944b11576dc42870d7f5103b282.eot?#iefix")
+format("embedded-opentype"), url("//db.onlinewebfonts.com/t/b4733944b11576dc42870d7f5103b282.woff2") format("woff2"), url("//db.onlinewebfonts.com/t/b4733944b11576dc42870d7f5103b282.woff")
+format("woff"), url("//db.onlinewebfonts.com/t/b4733944b11576dc42870d7f5103b282.ttf") format("truetype"), url("//db.onlinewebfonts.com/t/b4733944b11576dc42870d7f5103b282.svg#Antartida Rounded Light")
+format("svg"); }
+th, td{border: 1px solid #ddd; padding: 8px;}
+hr{background-color: #ddd; color: #ddd;}
+th{background: #094594 !important; color: white;}
+td#ap{font-weight: bold; font-size: 17px;}
+td#valor{font-weight: bold; font-size: 18px;}
+thead{border-radius: 50px;}
+p#valor2{font-weight: bold; font-size: 18px;}
+.col-md-6{-ms-flex:0 0 50%;flex:0 0 50%;max-width:50%;position:relative;width:100%;min-height:1px;padding-right:15px;padding-left:15px}
+.pull-left{float:left}
+.pull-right{float:right}
+body {
+    font-family: "Antartida Rounded Light" !important;
+    font-weight: normal;
+    font-style: normal;
+}

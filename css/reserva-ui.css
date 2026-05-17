@@ -1,0 +1,392 @@
+.reserva-ui-page{
+background:#f4f7fb;
+min-height:calc(100vh - 70px);
+padding-bottom:40px;
+}
+.reserva-ui-page .au-breadcrumb2{
+background:transparent;
+padding:28px 0 14px;
+}
+.reserva-ui-page .au-breadcrumb-span,
+.reserva-ui-page .au-breadcrumb__list li,
+.reserva-ui-page .au-breadcrumb__list span{
+color:#6b7280;
+font-size:13px;
+}
+.reserva-ui-container{
+width:94%;
+max-width:1180px;
+margin:0 auto;
+}
+.reserva-ui-card{
+border:0;
+border-radius:20px;
+background:#fff;
+box-shadow:0 18px 45px rgba(15,23,42,.08);
+overflow:hidden;
+}
+.reserva-ui-heading{
+background:linear-gradient(135deg,#1e4770,#256aa0);
+color:#fff;
+padding:28px 32px;
+text-align:left;
+}
+.reserva-ui-heading h3,
+.reserva-ui-heading .card-title{
+color:#fff;
+font-size:24px;
+font-weight:700;
+margin:0 0 8px;
+padding:0;
+}
+.reserva-ui-heading small{
+color:rgba(255,255,255,.82);
+display:block;
+font-size:13px;
+text-align:left;
+}
+.reserva-ui-page .card-header.reserva-ui-heading{
+border:0;
+border-radius:16px;
+margin-bottom:24px;
+}
+.reserva-ui-page .card-body{
+padding:26px 30px 34px;
+}
+.reserva-ui-page .nav-tabs{
+border:0;
+display:flex;
+flex-wrap:wrap;
+gap:8px;
+margin-bottom:24px;
+}
+.reserva-ui-page .nav-tabs .nav-link{
+align-items:center;
+background:#f8fafc;
+border:1px solid #e5e7eb;
+border-radius:999px;
+color:#25633f;
+display:flex;
+font-weight:600;
+gap:8px;
+padding:10px 15px;
+transition:all .2s ease;
+}
+.reserva-ui-page .nav-tabs .nav-link:hover{
+background:#eefaf4;
+border-color:#19a66a;
+color:#0f7a49;
+}
+.reserva-ui-page .nav-tabs .nav-link.active{
+background:#0f7a49;
+border-color:#0f7a49;
+box-shadow:0 10px 22px rgba(19,164,99,.24);
+color:#fff;
+}
+.reserva-ui-icon,
+.reserva-ui-page .tab-icon,
+.reserva-ui-page .btn svg,
+.reserva-ui-page .action-icon-button svg{
+fill:none;
+height:18px;
+stroke:currentColor;
+stroke-linecap:round;
+stroke-linejoin:round;
+stroke-width:2;
+width:18px;
+}
+.reserva-ui-page .tabcontent-border{
+border:0;
+}
+.reserva-ui-page .tab-pane{
+background:#fff;
+}
+.reserva-ui-page .tab-pane.p-20{
+padding:0!important;
+}
+.reserva-ui-page .tab-pane h4{
+color:#0f172a;
+font-size:18px;
+font-weight:800;
+margin:0 0 18px!important;
+}
+.reserva-ui-page .tab-pane hr{
+border-top:1px solid #e5e7eb;
+margin:0 0 20px;
+}
+.reserva-ui-page .tab-content>.active{
+margin-top:0;
+}
+.reserva-ui-page .accordion .card,
+.reserva-ui-page .tab-pane>.col-lg-12,
+.reserva-ui-page .table-responsive,
+.reserva-ui-page .table-responsivo{
+background:#fff;
+border:1px solid #e5e7eb;
+border-radius:16px;
+box-shadow:0 10px 24px rgba(15,23,42,.05);
+margin-bottom:22px;
+overflow:hidden;
+}
+.reserva-ui-page .accordion .card{
+overflow:hidden;
+}
+.reserva-ui-page .accordion .card-header{
+background:#f8fafc;
+border:0;
+padding:0;
+}
+.reserva-ui-page .accordion .btn-link{
+align-items:center;
+color:#0f172a;
+display:flex;
+font-size:16px;
+font-weight:800;
+justify-content:space-between;
+padding:16px 20px;
+text-decoration:none;
+width:100%;
+}
+.reserva-ui-page .accordion .btn-link:after{
+align-items:center;
+border:1px solid #dce3ec;
+border-radius:999px;
+color:#1e88d1;
+content:"+";
+display:inline-flex;
+font-size:18px;
+height:28px;
+justify-content:center;
+width:28px;
+}
+.reserva-ui-page .accordion .card-body{
+padding:22px;
+}
+.reserva-ui-page .table{
+margin-bottom:0;
+}
+.reserva-ui-page .table thead th{
+background:#f8fafc;
+border-bottom:1px solid #e5e7eb;
+color:#475569;
+font-size:12px;
+letter-spacing:.03em;
+text-transform:uppercase;
+white-space:nowrap;
+}
+.reserva-ui-page .table td,
+.reserva-ui-page .table th{
+border-color:#edf2f7;
+vertical-align:middle;
+}
+.reserva-ui-page .table tbody tr:hover{
+background:#f8fbff;
+}
+.reserva-ui-page .input-group-text{
+background:#f8fafc;
+border:1px solid #dce3ec;
+border-radius:10px 0 0 10px;
+color:#64748b;
+font-weight:700;
+}
+.reserva-ui-page .alert{
+border:0;
+border-radius:14px;
+font-weight:700;
+}
+.reserva-ui-page .col-md-4,
+.reserva-ui-page .col-md-3,
+.reserva-ui-page .col-md-6,
+.reserva-ui-page h4{
+margin-bottom:18px;
+}
+.reserva-ui-page label{
+color:#374151;
+font-size:13px;
+font-weight:700;
+margin-bottom:8px;
+}
+.reserva-ui-page label span{
+color:#15803d!important;
+font-weight:700;
+}
+.reserva-ui-page .form-control,
+.reserva-ui-page select.form-control{
+background:#fff;
+border:1px solid #dce3ec;
+border-radius:10px;
+box-shadow:none;
+color:#1f2937;
+min-height:42px;
+transition:border-color .2s ease,box-shadow .2s ease;
+}
+.reserva-ui-page .form-control:focus,
+.reserva-ui-page select.form-control:focus{
+border-color:#1e88d1;
+box-shadow:0 0 0 3px rgba(30,136,209,.14);
+}
+.reserva-ui-page .form-control:disabled,
+.reserva-ui-page select.form-control:disabled{
+background:#f1f5f9;
+color:#475569;
+}
+.reserva-ui-page .btn{
+align-items:center;
+border-radius:10px;
+display:inline-flex;
+font-weight:700;
+gap:8px;
+justify-content:center;
+min-height:42px;
+}
+.reserva-ui-page .action-icon-button{
+align-items:center;
+background:#f8fafc;
+border:1px solid #dce3ec;
+border-radius:10px;
+color:#475569;
+display:inline-flex;
+gap:6px;
+justify-content:center;
+min-height:36px;
+padding:7px 12px;
+}
+.reserva-ui-page .action-icon-button:hover{
+background:#eef6ff;
+color:#0b5f95;
+}
+.reserva-ui-page .btn-primary{
+background:#0b5f95;
+border-color:#0b5f95;
+box-shadow:0 10px 20px rgba(30,136,209,.18);
+color:#fff;
+}
+.reserva-ui-page .btn-outline-primary{
+border-color:#1e88d1;
+color:#1e88d1;
+}
+.reserva-ui-page .btn-outline-primary:hover{
+background:#0b5f95;
+color:#fff;
+}
+.reserva-ui-page .btn-outline-success{
+border-color:#13a463;
+color:#13a463;
+}
+.reserva-ui-page .btn-outline-success:hover{
+background:#0f7a49;
+color:#fff;
+}
+.reserva-ui-page .btn-warning{
+background:#b45309;
+border-color:#b45309;
+color:#fff;
+}
+.reserva-ui-page .btn-success{
+background:#0f7a49;
+border-color:#0f7a49;
+box-shadow:0 10px 20px rgba(19,164,99,.16);
+color:#fff;
+}
+.reserva-ui-page .btn-danger{
+background:#b91c1c;
+border-color:#b91c1c;
+box-shadow:0 10px 20px rgba(239,68,68,.14);
+color:#fff;
+}
+.reserva-ui-page .btn:hover{
+transform:translateY(-1px);
+}
+.reserva-ui-page .qntpessoataxamala,
+.reserva-ui-note{
+background:#f8fafc;
+border:1px solid #e5e7eb;
+border-radius:12px;
+color:#374151;
+padding:12px;
+}
+.reserva-ui-page .qntpessoataxamala input{
+border:1px solid #dce3ec;
+border-radius:10px;
+margin-top:8px;
+width:100%;
+}
+.reserva-ui-page #adicionais{
+display:none;
+}
+.rui-section{
+background:#f8fafc;
+border:1px solid #e5e7eb;
+border-radius:14px;
+margin-bottom:18px;
+padding:20px;
+}
+.rui-section-title{
+border-bottom:1px solid #e5e7eb;
+color:#1e4770;
+font-size:12px;
+font-weight:800;
+letter-spacing:.06em;
+margin:0 0 16px;
+padding-bottom:10px;
+text-transform:uppercase;
+}
+.rui-grid-2{
+display:grid;
+gap:16px;
+grid-template-columns:1fr 1fr;
+}
+.rui-grid-3{
+display:grid;
+gap:16px;
+grid-template-columns:1fr 1fr 1fr;
+}
+.rui-grid-4{
+display:grid;
+gap:16px;
+grid-template-columns:1fr 1fr 1fr 1fr;
+}
+.rui-field{
+display:flex;
+flex-direction:column;
+}
+.rui-field label{
+color:#374151;
+font-size:13px;
+font-weight:700;
+margin-bottom:6px;
+}
+.rui-field label span{
+color:#15803d;
+font-size:11px;
+font-weight:600;
+}
+.rui-col-2{grid-column:span 2;}
+.rui-col-3{grid-column:span 3;}
+.rui-col-full{grid-column:1/-1;}
+@media only screen and (max-width:767px){
+.rui-grid-2,.rui-grid-3,.rui-grid-4{
+grid-template-columns:1fr;
+}
+.rui-col-2,.rui-col-3,.rui-col-full{
+grid-column:span 1;
+}
+}
+.reserva-ui-page .alert-danger{
+font-size:14px;
+}
+@media only screen and (max-width:767px){
+.reserva-ui-container{
+padding:0 12px;
+width:100%;
+}
+.reserva-ui-heading,
+.reserva-ui-page .card-body{
+padding:22px 18px;
+}
+.reserva-ui-page .nav-tabs .nav-link{
+justify-content:center;
+text-align:center;
+width:100%;
+}
+}
