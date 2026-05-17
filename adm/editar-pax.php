@@ -10,7 +10,11 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require './../vendor/autoload.php';
 $mail = new PHPMailer(true);
-$numberVoucher = $_POST['numbervoucher'] ?? $_GET['numbervoucher'];
+$numberVoucher = $_POST['numbervoucher'] ?? $_GET['numbervoucher'] ?? null;
+if (!is_string($numberVoucher) || $numberVoucher === '') {
+    header('location: home');
+    exit;
+}
 require_once __DIR__ . '/includes/editar_pax_init.php';
 if( isset($_POST['adm'] ) )
 {
@@ -264,7 +268,7 @@ if( isset($_POST['serviceadd']) )
             ":id"       => $idAdd
         )
     );
-    marcarReservaAlterada($pdo, $voucher);
+    marcarReservaAlterada($pdo, $_POST['voucher']);
     $nomeServicoAdd = buscarNomeServico($pdo, (int) $service2);
     logAudit($pdo, $_POST['voucher'],
         "A reserva ADICIONAL foi atualizada para as seguintes informações: Data de Embarque Inicial: "
@@ -476,22 +480,14 @@ if( isset($_POST['voucherEmail'])) {
         //$mail->AltBody = 'This is the body in plain text for non-HTML mail clients';
 
         $mail->send();
-        logAudit($pdo, $_POST['voucher'],
-            "Voucher enviado para o e-mail:".$_POST['emailcliente']
-        );
-
-        $dadosReservaAu  = $pdo->prepare("select * from `ct_audit` where `voucher` = :numberVoucher ");
-        $dadosReservaAu->execute( array(":numberVoucher" => $_POST['voucher'] ) );
-        $registroAu      =  $dadosReservaAu->fetchAll(PDO::FETCH_CLASS);
-        $contadorAuditoria = $dadosReservaAu->rowCount();
-        echo ("<div class='alert alert-success' role='alert' style='margin-top: 90px;'>E-mail enviado  para o voucher: ".$_POST['voucher']."</div>");
+        logAudit($pdo, $_POST['voucher'], "Voucher enviado para o e-mail:" . $_POST['emailcliente']);
+        setFlash('success', "E-mail enviado para o voucher: " . $_POST['voucher']);
 
     } catch (Exception $e) {
-        echo ("<div class='alert alert-danger' role='alert'>E-mail não enviado  para o voucher: ". $mail->ErrorInfo."</div>");
-
+        setFlash('danger', "E-mail não enviado para o voucher: " . $mail->ErrorInfo);
     }
-    header('location: editar-pax?numbervoucher='.$_POST['voucher']);
-
+    header('location: editar-pax?numbervoucher=' . $_POST['voucher']);
+    exit;
 }
 if( isset($_POST['Addcredito'] ) )
 {
@@ -1071,6 +1067,12 @@ if( isset($_POST['excluirCadFatura']) ) {
                     <small><?php echo("Abertura ".date("d-m-Y", strtotime( $dadosGerais['abertura'] )) ); ?></small>
                 </div>
                 <div class="card-body">
+                    <?php $flash = getFlash(); if ($flash): ?>
+                        <div class="alert alert-<?= htmlspecialchars($flash['type']) ?> alert-dismissible fade show" role="alert">
+                            <?= htmlspecialchars($flash['msg']) ?>
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                        </div>
+                    <?php endif; ?>
                     <?php if( $dadosGerais['idresponsavel'] <> $_SESSION['id'] and $_SESSION['id'] == 45 ){ ?>
                         <div class="col-lg-12">
                             <div class="alert alert-danger" role="alert">
@@ -1537,111 +1539,109 @@ if( isset($_POST['excluirCadFatura']) ) {
 
                                             <div id="collapseOne" class="collapse show" aria-labelledby="headingOne" data-parent="#accordionExample">
 
-                                                <div class="card-body">
-                                                    <?php if( $contador > 0 ){ ?>
-                                                        <h4>Serviços Adicionais</h4>
-                                                        <div class="col-lg-12">
-                                                            <?php foreach ($registro as $item){ ?>
-                                                                <form action="" method="post">
-                                                                    <div class="col-md-4 pull-left">
-                                                                        <strong><label for="serviceAdd autocomplete">Serviço Contratado</label></strong>
-                                                                        <select class="form-control" onchange="servicoselecionado1()" name="serviceAdd2">
-                                                                            <?php foreach ($listaServicos as $item3){?>
-                                                                                <?php if( $item->fullname == $item3->fullname ){ ?>
-                                                                                    <option value="<?php echo htmlentities($item3->id, ENT_QUOTES, 'UTF-8'); ?>" selected>
-                                                                                        <?php echo htmlentities($item3->fullname, ENT_QUOTES, 'UTF-8'); ?>
+                                                <div class="card-body p-3">
+                                                    <?php if ($contador > 0): ?>
+                                                        <?php foreach ($registro as $item): ?>
+                                                            <div class="card border-0 shadow-sm mb-3" style="border-radius:14px;overflow:hidden">
+                                                                <div class="d-flex align-items-center justify-content-between px-3 py-2"
+                                                                     style="background:linear-gradient(135deg,#1e4770,#256aa0)">
+                                                                    <div>
+                                                                        <span style="color:#fff;font-weight:700;font-size:14px"><?= htmlspecialchars($item->fullname ?? '') ?></span>
+                                                                        <span style="color:rgba(255,255,255,.7);font-size:12px;margin-left:10px"><?= date('d/m/Y', strtotime($item->dateinput)) ?></span>
+                                                                    </div>
+                                                                    <span style="color:rgba(255,255,255,.75);font-size:12px">
+                                                                        <?= (int)$item->qpax ?> adulto(s) &middot; <?= (int)$item->qchild ?> meia(s) &middot; <?= (int)$item->qfree ?> free
+                                                                    </span>
+                                                                </div>
+                                                                <form method="post" class="p-3">
+                                                                    <div class="form-row mb-2">
+                                                                        <div class="col-md-5">
+                                                                            <label class="pax-label" for="serviceAdd2_<?= (int)$item->id ?>">Serviço Contratado</label>
+                                                                            <select class="form-control pax-input" name="serviceAdd2" id="serviceAdd2_<?= (int)$item->id ?>" onchange="servicoselecionado1()">
+                                                                                <?php foreach ($listaServicos as $item3): ?>
+                                                                                    <option value="<?= (int)$item3->id ?>" <?= ((int)$item->idservico === (int)$item3->id) ? 'selected' : '' ?>>
+                                                                                        <?= htmlspecialchars($item3->fullname) ?>
                                                                                     </option>
-                                                                                <?php } else{?>
-                                                                                    <option value="<?php echo( utf8_encode( $item3->id) ); ?>">
-                                                                                        <?php echo( utf8_encode( $item3->fullname) ); ?>
+                                                                                <?php endforeach; ?>
+                                                                            </select>
+                                                                        </div>
+                                                                        <div class="col-md-3">
+                                                                            <label class="pax-label" for="valueserviceadd_<?= (int)$item->id ?>">Valor do Serviço</label>
+                                                                            <div class="input-group">
+                                                                                <div class="input-group-prepend"><span class="input-group-text" style="border-radius:10px 0 0 10px">R$</span></div>
+                                                                                <input type="text" class="form-control pax-input" name="valueserviceadd" id="valueserviceadd_<?= (int)$item->id ?>"
+                                                                                       onKeyPress="return(moeda(this,'.',',',event))"
+                                                                                       value="<?= number_format((float)$item->valueservice, 2, ',', '.') ?>">
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="col-md-4">
+                                                                            <label class="pax-label" for="documentoadd_<?= (int)$item->id ?>">Complemento / Observação</label>
+                                                                            <input type="text" class="form-control pax-input" name="documentoadd" id="documentoadd_<?= (int)$item->id ?>"
+                                                                                   value="<?= htmlspecialchars($item->documento ?? '') ?>">
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="form-row mb-2">
+                                                                        <div class="col">
+                                                                            <label class="pax-label" for="qpax_<?= (int)$item->id ?>">Adultos <small class="text-muted">(10–64 anos ou 65+)</small></label>
+                                                                            <input type="number" class="form-control pax-input" name="qpax" id="qpax_<?= (int)$item->id ?>" value="<?= (int)$item->qpax ?>">
+                                                                        </div>
+                                                                        <div class="col">
+                                                                            <label class="pax-label" for="qchild_<?= (int)$item->id ?>">Meia <small class="text-muted">(5–9 anos)</small></label>
+                                                                            <input type="number" class="form-control pax-input" name="qchild" id="qchild_<?= (int)$item->id ?>" value="<?= (int)$item->qchild ?>">
+                                                                        </div>
+                                                                        <div class="col">
+                                                                            <label class="pax-label" for="qfree_<?= (int)$item->id ?>">Free <small class="text-muted">(0–4 anos)</small></label>
+                                                                            <input type="number" class="form-control pax-input" name="qfree" id="qfree_<?= (int)$item->id ?>" value="<?= (int)$item->qfree ?>">
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="form-row mb-2">
+                                                                        <div class="col-md-3">
+                                                                            <label class="pax-label" for="horaapadd_<?= (int)$item->id ?>">Hora Apresentação</label>
+                                                                            <input type="time" class="form-control pax-input" name="horaapadd" id="horaapadd_<?= (int)$item->id ?>"
+                                                                                   value="<?= htmlspecialchars($item->horaap) ?>">
+                                                                        </div>
+                                                                        <div class="col-md-4">
+                                                                            <label class="pax-label" for="horarioembarque_<?= (int)$item->id ?>">Horário Embarque</label>
+                                                                            <select class="form-control pax-input" name="horarioembarque" id="horarioembarque_<?= (int)$item->id ?>">
+                                                                                <?php foreach ($listaHorarios as $h): ?>
+                                                                                    <option value="<?= $h->idshedule ?>" <?= ($item->schedule == $h->schedule) ? 'selected' : '' ?>>
+                                                                                        <?= htmlspecialchars($h->schedule) ?>
                                                                                     </option>
-                                                                                <?php }?>
-                                                                            <?php }?>
-                                                                        </select>
+                                                                                <?php endforeach; ?>
+                                                                            </select>
+                                                                        </div>
+                                                                        <div class="col-md-3">
+                                                                            <label class="pax-label" for="datainicio_<?= (int)$item->id ?>">Data Embarque</label>
+                                                                            <input type="date" class="form-control pax-input" name="datainicio" id="datainicio_<?= (int)$item->id ?>"
+                                                                                   value="<?= htmlspecialchars($item->dateinput) ?>">
+                                                                        </div>
+                                                                        <?php if ($item->dateinput == date('Y-m-d')): ?>
+                                                                        <div class="col-md-2 d-flex align-items-end pb-1">
+                                                                            <label class="mb-0" style="font-size:12px;font-weight:600;cursor:pointer;color:#374151">
+                                                                                <input type="checkbox" name="confirmarhorarioembarque2" <?= $item->confirmacao2 == 1 ? 'checked' : '' ?>>
+                                                                                Confirmar embarque
+                                                                            </label>
+                                                                        </div>
+                                                                        <?php endif; ?>
                                                                     </div>
-                                                                    <div class="col-md-4 pull-left">
-                                                                        <strong><label for="valueserviceadd">Valor do Serviço</label></strong>
-                                                                        <input  type="text" class="form-control" name="valueserviceadd" id="valueserviceadd"
-                                                                                onKeyPress="return(moeda(this,'.',',',event))"
-                                                                                value="<?php echo( number_format( $item->valueservice, 2, ",",
-                                                                                    "." ) ); ?>" >
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-right autocomplete">
-                                                                        <strong><label for="documentoadd">Complemento|Observação</label></strong>
-                                                                        <input  type="text" class="form-control" name="documentoadd" id="documentoadd"
-                                                                                value="<?php echo( utf8_encode( $item->documento ) ); ?>" >
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-left autocomplete">
-                                                                        <strong><label for="qpax">Quantidade Passageiros<span style="font-size: 12px; color: black;"> (Adulto entre 10 a 64 Anos, 11 meses e 29 dias ou Idoso 65+)</span></label></strong>
-                                                                        <input  type="number" class="form-control" name="qpax" id="qpax"
-                                                                                value="<?php echo( utf8_encode( $item->qpax ) ); ?>" >
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-left autocomplete">
-                                                                        <strong><label for="qchild">Quantidade Meia<span style="font-size: 12px; color: black;"> (Entre 5 a 9 anos, 11 meses e 29 dias)</span></label></strong>
-                                                                        <input  type="number" class="form-control" name="qchild" id="qchild"
-                                                                                value="<?php echo( utf8_encode( $item->qchild ) ); ?>" >
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-right autocomplete">
-                                                                        <strong><label for="qfree">Quantidade Free<span style="font-size: 10px; color: red;; font-size: 10px;color: red;"> (Free ou entre 0 a 4 anos, 11 meses e 29 dias)</span></label></strong>
-                                                                        <input  type="number" class="form-control" name="qfree" id="qfree"
-                                                                                value="<?php echo( utf8_encode( $item->qfree ) ); ?>" >
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-left">
-                                                                        <strong><label for="horaapadd">Horário de Apresentação</label></strong>
-                                                                        <input  type="time" class="form-control" name="horaapadd" id="horaapadd"
-                                                                                value="<?php echo( $item->horaap ); ?>">
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-left">
-                                                                        <strong><label for="horaapadd">Horário de Embarque</label></strong>
-                                                                        <select class="form-control"  name="horarioembarque" id="horario1">
-                                                                            <?php foreach ($listaHorarios as $horariosEmbarque){  ?>
-                                                                                <?php if( $item->schedule == $horariosEmbarque->schedule ){ ?>
-                                                                                    <option value="<?php echo($horariosEmbarque->idshedule); ?>" selected>
-                                                                                        <?php echo($horariosEmbarque->schedule); ?>
-                                                                                    </option>
-                                                                                <?php }else{?>
-                                                                                    <option value="<?php echo($horariosEmbarque->idshedule); ?>">
-                                                                                        <?php echo($horariosEmbarque->schedule); ?>
-                                                                                    </option>
-                                                                                <?php }?>
-                                                                            <?php }?>
-                                                                        </select>
-                                                                    </div>
-                                                                    <div class="col-md-4 pull-right">
-                                                                        <strong><label for="schedule">Data Embarque </label></strong>
-                                                                        <input  type="date" class="form-control" name="datainicio" id="datainicio"
-                                                                                value="<?php echo( $item->dateinput ); ?>">
-                                                                    </div>
-                                                                    <input type="hidden" value="<?php echo( $item->id); ?>" name="idAdd">
-                                                                    <div class="container-fluid">
-                                                                        <?php if( $item->dateinput == date("Y-m-d") ){ ?>
-                                                                            <?php if($item->confirmacao2 == 1){ ?>
-                                                                                <label for="confirmarhorarioembarque2"><input type="checkbox" checked name="confirmarhorarioembarque2" id="confirmarhorarioembarque2"> Confirmar Horário de Embarque ?</label>
-                                                                            <?php } else {?>
-                                                                                <label for="confirmarhorarioembarque2"><input type="checkbox" name="confirmarhorarioembarque2" id="confirmarhorarioembarque2"> Confirmar Horário de Embarque ?</label>
-                                                                            <?php }?>
-                                                                        <?php }?>
-
-                                                                    </div>
-
-                                                                    <div class="col-md-6 pull-left">
-                                                                        <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                                        <input type="hidden" name="valor2" value="<?php echo($item->valueservice); ?>" >
-                                                                        <button class="btn btn-success btn-lg btn-block" id="salvarfatura" name="serviceadd" type="submit">
-                                                                            <svg><use href="#icon-refresh"></use></svg><span>Atualizar Serviço Adicional</span></button>
-
-                                                                    </div>
-                                                                    <div class="col-md-6 pull-right">
-                                                                        <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                                        <button class="btn btn-danger btn-lg btn-block" name="deleteserviceadd" type="submit">
-                                                                            <svg><use href="#icon-trash"></use></svg><span>Excluir Serviço Adicional</span></button>
+                                                                    <input type="hidden" name="idAdd" value="<?= (int)$item->id ?>">
+                                                                    <input type="hidden" name="voucher" value="<?= htmlspecialchars($dadosGerais['numbervoucher']) ?>">
+                                                                    <input type="hidden" name="valor2" value="<?= (float)$item->valueservice ?>">
+                                                                    <div class="d-flex mt-2" style="gap:10px">
+                                                                        <button type="submit" name="serviceadd" class="btn btn-success" style="border-radius:8px;font-weight:600;padding:8px 20px">
+                                                                            <svg style="width:14px;height:14px;vertical-align:middle;margin-right:4px"><use href="#icon-refresh"></use></svg>Atualizar
+                                                                        </button>
+                                                                        <button type="submit" name="deleteserviceadd" class="btn btn-outline-danger" style="border-radius:8px;font-weight:600;padding:8px 20px"
+                                                                                onclick="return confirm('Excluir o serviço adicional \'<?= htmlspecialchars(addslashes($item->fullname ?? ''), ENT_QUOTES) ?>\'?')">
+                                                                            <svg style="width:14px;height:14px;vertical-align:middle;margin-right:4px"><use href="#icon-trash"></use></svg>Excluir
+                                                                        </button>
                                                                     </div>
                                                                 </form>
-                                                            <?php }?>
-                                                        </div>
-                                                    <?php }else{?>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php else: ?>
                                                         <div class="alert alert-warning" role="alert">Não há serviços adicionais.</div>
-                                                    <?php }?>
+                                                    <?php endif; ?>
                                                 </div>
                                             </div>
                                         </div>
@@ -1655,68 +1655,71 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                 </h2>
                                             </div>
                                             <div id="collapseTwo" class="collapse show" aria-labelledby="headingTwo" data-parent="#accordionExample">
-                                                <div class="card-body">
-                                                    <div class="col-lg-12">
-                                                        <form method="post" action="">
-                                                            <div class="col-md-6 pull-left">
-                                                                <strong><label for="datainicio">Data de Embarque</label></strong>
-                                                                <input required type="date" name="datainicio" id="datainicio" class="form-control"
-                                                                       value="<?php echo(date("Y-m-d")); ?>">
-                                                            </div>
-                                                            <div class="col-md-6 pull-right">
-                                                                <strong><label for="servico">Serviço Contratado</label></strong>
-                                                                <select  name="servico" id="servico" onchange="servicoselecionado2()" class="form-control" required>
-                                                                    <option selected value="3" >Selecione o Serviço</option>
-                                                                    <?php foreach ($listaServicos as $listaServico) {?>
-                                                                        <option value="<?php echo($listaServico->id); ?>">
-                                                                            <?php echo(utf8_encode($listaServico->fullname)); ?>
+                                                <div class="card-body p-3">
+                                                    <form method="post">
+                                                        <div class="form-row mb-2">
+                                                            <div class="col-md-5">
+                                                                <label class="pax-label" for="novo_servico">Serviço Contratado</label>
+                                                                <select name="servico" id="novo_servico" onchange="servicoselecionado2()" class="form-control pax-input" required>
+                                                                    <option value="3">Selecione o Serviço</option>
+                                                                    <?php foreach ($listaServicos as $listaServico): ?>
+                                                                        <option value="<?= (int)$listaServico->id ?>">
+                                                                            <?= htmlspecialchars($listaServico->fullname) ?>
                                                                         </option>
-                                                                    <?php }?>
+                                                                    <?php endforeach; ?>
                                                                 </select>
                                                             </div>
-                                                            <div class="col-md-6 pull-right">
-                                                                <strong><label for="documento">Complemento|Observação</label></strong>
-                                                                <input  type="text" name="documento" id="documento" class="form-control">
+                                                            <div class="col-md-3">
+                                                                <label class="pax-label" for="novo_valor">Valor do Serviço</label>
+                                                                <div class="input-group">
+                                                                    <div class="input-group-prepend"><span class="input-group-text" style="border-radius:10px 0 0 10px">R$</span></div>
+                                                                    <input type="text" name="valorservico" id="novo_valor" class="form-control pax-input"
+                                                                           onKeyPress="return(moeda(this,'.',',',event))" required>
+                                                                </div>
                                                             </div>
-                                                            <div class="col-md-6 pull-right">
-                                                                <strong><label for="valorservico">Valor do Serviço</label></strong>
-                                                                <input type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                       required name="valorservico" id="valorservico"  class="form-control">
+                                                            <div class="col-md-4">
+                                                                <label class="pax-label" for="novo_documento">Complemento / Observação</label>
+                                                                <input type="text" name="documento" id="novo_documento" class="form-control pax-input">
                                                             </div>
-                                                            <div class="col-md-6 pull-left">
-                                                                <strong><label for="quantidadepax">Quantidade Pessoas (pax)</label></strong>
-                                                                <input value="1" type="number" name="quantidadepax" class="form-control">
+                                                        </div>
+                                                        <div class="form-row mb-2">
+                                                            <div class="col">
+                                                                <label class="pax-label" for="novo_qpax">Adultos <small class="text-muted">(10–64 anos ou 65+)</small></label>
+                                                                <input type="number" name="quantidadepax" id="novo_qpax" class="form-control pax-input" value="1">
                                                             </div>
-                                                            <div class="col-md-6 pull-right">
-                                                                <strong><label for="quantidadechild">Quantidade Meia<span style="font-size: 12px; color: black;"> (5 a 6 anos e 11 meses)</span></label></strong>
-                                                                <input value="0" type="number" name="quantidadechild" class="form-control">
+                                                            <div class="col">
+                                                                <label class="pax-label" for="novo_qchild">Meia <small class="text-muted">(5–9 anos)</small></label>
+                                                                <input type="number" name="quantidadechild" id="novo_qchild" class="form-control pax-input" value="0">
                                                             </div>
-                                                            <div class="col-md-4 pull-left">
-                                                                <strong><label for="quantidadepax">Quantidade Free<span style="font-size: 10px;"> Free ou entre 0 a 4 anos, 11 meses e 29 dias)</span></label></strong>
-                                                                <input value="0" type="number" name="quantidadefree" class="form-control">
+                                                            <div class="col">
+                                                                <label class="pax-label" for="novo_qfree">Free <small class="text-muted">(0–4 anos)</small></label>
+                                                                <input type="number" name="quantidadefree" id="novo_qfree" class="form-control pax-input" value="0">
                                                             </div>
-                                                            <div class="col-md-4 pull-left">
-                                                                <strong><label for="horariobusca">Horário de Apresentação</label></strong>
-                                                                <input type="time" required name="horariobusca" id="horariobusca" class="form-control">
+                                                        </div>
+                                                        <div class="form-row mb-3">
+                                                            <div class="col-md-3">
+                                                                <label class="pax-label" for="novo_horaap">Hora Apresentação</label>
+                                                                <input type="time" name="horariobusca" id="novo_horaap" class="form-control pax-input" required>
                                                             </div>
-                                                            <div class="col-md-4 pull-right">
-                                                                <strong><label for="horario">Horário de Embarque</label></strong>
-                                                                <select required name="horario" id="horario2" class="form-control">
-                                                                    <?php foreach ($listaHorarios as $horariosEmbarque){  ?>
-                                                                        <option value="<?php echo($horariosEmbarque->idshedule); ?>">
-                                                                            <?php echo($horariosEmbarque->schedule); ?>
-                                                                        </option>
-                                                                    <?php }?>
+                                                            <div class="col-md-4">
+                                                                <label class="pax-label" for="novo_horario">Horário Embarque</label>
+                                                                <select name="horario" id="novo_horario" class="form-control pax-input" required>
+                                                                    <?php foreach ($listaHorarios as $h): ?>
+                                                                        <option value="<?= $h->idshedule ?>"><?= htmlspecialchars($h->schedule) ?></option>
+                                                                    <?php endforeach; ?>
                                                                 </select>
                                                             </div>
-                                                            <input type="hidden" value="<?php echo($dadosGerais['numbervoucher']); ?>" name="voucher">
-                                                            <div class="form-group container-fluid">
-                                                                <button type="submit" class="btn btn-primary btn-lg btn-block" id="salvarfatura" name="vincular">
-                                                                    <svg><use href="#icon-link"></use></svg><span>Vincular Serviço</span>
-                                                                </button>
+                                                            <div class="col-md-3">
+                                                                <label class="pax-label" for="novo_data">Data Embarque</label>
+                                                                <input type="date" name="datainicio" id="novo_data" class="form-control pax-input"
+                                                                       value="<?= date('Y-m-d') ?>" required>
                                                             </div>
-                                                        </form>
-                                                    </div>
+                                                        </div>
+                                                        <input type="hidden" name="voucher" value="<?= htmlspecialchars($dadosGerais['numbervoucher']) ?>">
+                                                        <button type="submit" name="vincular" class="btn btn-primary" style="border-radius:8px;font-weight:600;padding:9px 24px">
+                                                            <svg style="width:14px;height:14px;vertical-align:middle;margin-right:4px"><use href="#icon-link"></use></svg>Vincular Serviço
+                                                        </button>
+                                                    </form>
                                                 </div>
                                             </div>
                                         </div>
