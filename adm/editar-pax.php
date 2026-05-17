@@ -542,6 +542,7 @@ if( isset($_POST['Addcredito'] ) )
     $cartao = $pdo->prepare('SELECT name FROM `ct_currentaccount` where id = :id');
     $cartao->execute([":id" => $ccfp]);
     $dadosCartao = $cartao->fetch(PDO::FETCH_ASSOC);
+    creditarFatura($pdo, $voucher, (float) $valordocredito);
     logAudit($pdo, $voucher, "Crédito no valor de R$ ".$valordocredito." pago com ".$dadosCartao['name']);
     setFlash('success', "Crédito adicionado no valor de R$ {$valordocredito} para o voucher {$voucher}");
     header('location: editar-pax?numbervoucher='.$voucher);

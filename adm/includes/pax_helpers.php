@@ -91,3 +91,19 @@ function buscarNomeStatus(PDO $pdo, int $id): string
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row['fullname'] ?? '';
 }
+
+/**
+ * Incrementa o campo credito da ct_fatura vinculada ao voucher.
+ * Não faz nada se a reserva não estiver associada a uma fatura (numberfatura = 0).
+ */
+function creditarFatura(PDO $pdo, string $voucher, float $valor): void
+{
+    $stmt = $pdo->prepare('SELECT numberfatura FROM ct_reserva WHERE numbervoucher = :v');
+    $stmt->execute([':v' => $voucher]);
+    $numberfatura = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['numberfatura'] ?? 0);
+    if ($numberfatura <= 0) {
+        return;
+    }
+    $upd = $pdo->prepare('UPDATE ct_fatura SET credito = credito + :valor WHERE id = :id');
+    $upd->execute([':valor' => $valor, ':id' => $numberfatura]);
+}
