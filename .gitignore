@@ -1,4 +1,6 @@
 config.php
+.env
+!.env.example
 composer.phar
 .DS_Store
 *.log
@@ -13,4 +15,3 @@ adm/relatorio/dompdf/vendor/
 adm/relatorio_old/dompdf/vendor/
 vendor/composer/
 vendor/phpmailer/
-config.php

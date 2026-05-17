@@ -371,21 +371,20 @@ if( isset($_POST['voucherEmail'])) {
 
     try {
 
-        //Server settings
         $mail->SMTPDebug = 0;
         $mail->isSMTP();
-        $mail->Host = 'email-ssl.com.br';
-        $mail->SMTPAuth = true;
-        $mail->Username = 'reservasonline@grupocassi.com.br';
-        $mail->Password = 'A@nderson30116530';
-        $mail->SMTPSecure = 'tls';
-        $mail->Port = 587;
-        //Recipients
-        $mail->setFrom('reservasonline@grupocassi.com.br', 'Reservas Online - Cassi Turismo');
-        $mail->addAddress($_POST['emailcliente'], 'Cliente');     // Add a recipient
-        //$mail->addAddress('ellen@example.com');               // Name is optional
-        $mail->addReplyTo('cassi@cassiturismo.com.br', 'Information');
-        $mail->addCC('cassi@cassiturismo.com.br');
+        $mail->Host       = env('MAIL_HOST');
+        $mail->SMTPAuth   = true;
+        $mail->Username   = env('MAIL_USERNAME');
+        $mail->Password   = env('MAIL_PASSWORD');
+        $mail->SMTPSecure = env('MAIL_ENCRYPTION', 'tls');
+        $mail->Port       = (int) env('MAIL_PORT', 587);
+        $mail->setFrom(env('MAIL_FROM_ADDRESS'), env('MAIL_FROM_NAME', ''));
+        $mail->addAddress($_POST['emailcliente'], 'Cliente');
+        $mail->addReplyTo(env('MAIL_REPLY_TO'), 'Information');
+        if (env('MAIL_CC')) {
+            $mail->addCC(env('MAIL_CC'));
+        }
         //$mail->addBCC('bcc@example.com');
 
         //Attachments
