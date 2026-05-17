@@ -10,87 +10,8 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require './../vendor/autoload.php';
 $mail = new PHPMailer(true);
-if(isset( $_POST['numbervoucher'] ))
-{
-    $numberVoucher = $_POST['numbervoucher'];
-}else{
-    $numberVoucher = $_GET['numbervoucher'];
-}
-$horarios = $pdo->prepare('select * from `ct_service_schedule` order by `schedule` ');
-$horarios->execute();
-$listaHorarios = $horarios->fetchAll(PDO::FETCH_CLASS);
-$buscaCredito = $pdo->prepare(
-    'SELECT cfc.id, valuecredit, `name`, datacredit, valueagente, dataagente FROM `ct_createfaturacredit` cfc left join `ct_currentaccount` cc
- on cfc.idaccountcurrent = cc.id where `numbervoucher` = :voucher');
-$buscaCredito->execute( array(":voucher" => $numberVoucher ) );
-$registroCredito = $buscaCredito->fetchAll(PDO::FETCH_CLASS);
-$contadorCredito = $buscaCredito->rowCount();
-$dadosReservaAu  = $pdo->prepare("select * from `ct_audit` where `voucher` = :numberVoucher ");
-$dadosReservaAu->execute( array(":numberVoucher" => $numberVoucher ) );
-$registroAu      =  $dadosReservaAu->fetchAll(PDO::FETCH_CLASS);
-$contadorAuditoria = $dadosReservaAu->rowCount();
-$administrativo = $pdo->prepare(
-    'select c.id, c.datematurity, c.datepayment, c.numberadd, cc.name from `ct_createfatura` 
-c left join ct_currentaccount cc on cc.id = c.idcurrentaccount where numbervoucher = :voucher');
-$administrativo->execute(array(":voucher" => $numberVoucher));
-$contadorAdm = $administrativo->rowCount();
-$dadosReserva = $pdo->prepare(
-    "SELECT r.id,pax, r.idempresa, documento,photoresident ,dateinput, dateoutput, photoresident, c.fullname as cliente, s.fullname as `status`, r.valueservice, se.fullname as serivco, ag.fullname as agente, namepayment, g.id as guia, qtdpax, qtdchild, qtdfree, ss.schedule,numbervoucher, r.idstatusinvoice, r.abertura, firstname,  r.horaap, r.idcliente,
-               r.idresponsavel, r.totalservico, r.confirmacao, r.numberfatura, r.fl_altarar_valor_servico, r.identificacao_mala, r.incluirtaxamala, r.qntpessoataxamala FROM `ct_reserva` r left join ct_cliente c on c.id = r.idcliente left join ct_responsavel re on re.id = r.idresponsavel left join ct_status s on s.id = r.idstatus left join ct_guia g on g.id = r.idguia join ct_servico se on se.id = r.idservico left join ct_agentes as ag on r.idagente = ag.id
-               left join ct_usuario us on us.id = r.idresponsavel left join ct_service_schedule ss on ss.idshedule = r.idhorario left join `ct_form_of_ payment` as cfp on cfp.id = r.idpayment  where `numbervoucher` = :numbervoucher");
-$dadosReserva->execute( array(":numbervoucher" => $numberVoucher ));
-$dadosGerais = $dadosReserva->fetch(PDO::FETCH_ASSOC);
-$adicionais = $pdo->prepare(
-    'SELECT ra.id,ra.dateinput as ap, s.fullname,s.screenplay, ss.schedule, qpax, qchild, qfree, ra.dateinput, ra.dateoutput, ra.valueservice, ra.horaap, ra.documento, s.id as idservico,ra.confirmacao2, ra.fl_altarar_valor_servico
-               FROM `ct_recentlyadd` ra left join `ct_reserva` r on r.id = ra.idrecently
-               left join ct_servico s on s.id = ra.idservice left join ct_service_schedule ss
-               on ss.idshedule = ra.idschedule where r.id = :id');
-$adicionais->execute(array(":id" => $dadosGerais['id'] ) );
-$registro = $adicionais->fetchAll(PDO::FETCH_CLASS);
-$contador = $adicionais->rowCount();
-$todosCliente    = refClientes($pdo);
-$listaEmpresas   = refEmpresasTodas($pdo);
-$listaServicos   = refServicos($pdo);
-$listaPagamentos = refPagamentos($pdo);
-
-//lista status
-$status = $pdo->prepare('select id,fullname as situacao from `ct_status` ');
-$status->execute();
-$listaStatus = $status->fetchAll(PDO::FETCH_CLASS);
-$comissoes = $pdo->prepare(" select  * from `ct_createfaturacredit` where numbervoucher = :voucher and dataagente <> '0000-00-00 00:00:00' ");
-$comissoes->execute(array(":voucher" => $numberVoucher));
-$despesa = $comissoes->fetchAll(PDO::FETCH_CLASS);
-$contadorDespesa = $comissoes->rowCount();
-$contaCorrente = $pdo->prepare('SELECT * FROM `ct_currentaccount` ');
-$contaCorrente->execute();
-$registroCc = $contaCorrente->fetchAll(PDO::FETCH_CLASS);
-
-$planoContas = $pdo->prepare('SELECT * FROM `ct_planaccounts` ');
-$planoContas->execute();
-$registroPlan = $planoContas->fetchAll(PDO::FETCH_CLASS);
-$statusInvoice = $pdo->prepare('select * from `ct_statusinvoice` where `id` >= :maior and `id` <= :menor');
-$statusInvoice->execute(array(":maior" => 6, ":menor" => 7));
-$registroStI = $statusInvoice->fetchAll(PDO::FETCH_CLASS);
-$credito_debito_all = $pdo->prepare('select * from  `ct_credito_deb_reserva` where `numbervoucher` = :voucher ');
-$credito_debito_all->execute( array(":voucher" => $numberVoucher));
-$registro_credito_debito = $credito_debito_all->fetchAll(PDO::FETCH_CLASS);
-
-
-$data_total_servico = ($dadosGerais['valueservice'] * $dadosGerais['qtdpax'] + (($dadosGerais['valueservice'] / 2) * $dadosGerais['qtdchild']));
-$busta_total_servico2 = $pdo->prepare('SELECT sum(valueservice * qpax +((valueservice/2) * qchild)) as total2 FROM `ct_recentlyadd` where idrecently = :id');
-$busta_total_servico2->execute(array(":id"=> $dadosGerais['id']));
-$data_total2 = $busta_total_servico2->fetch(PDO::FETCH_ASSOC);
-
-$buscaCredito1 = $pdo->prepare(
-    'SELECT sum(valuecredit) as totalpago FROM `ct_createfaturacredit`  where `numbervoucher` = :voucher');
-$buscaCredito1->execute( array(":voucher" => $numberVoucher ) );
-$registroCredito1 = $buscaCredito1->fetchAll(PDO::FETCH_CLASS);
-
-//$updateReserva1 = $pdo->prepare("UPDATE `ct_reserva` SET `totalservico` = :totalservico,`totalcredito` = :totalcredito WHERE `ct_reserva`.`numbervoucher` = :nv ");
-//$updateReserva1->execute(array(":totalservico" => $data_total_servico+$data_total2['total2'], ":totalcredito" => $registroCredito1['totalpago'] ,":nv" => $numberVoucher ));
-$buscarResponsavel_todos = $pdo->prepare('select * from `ct_usuario` where bloqueado = 0 order by firstname');
-$buscarResponsavel_todos->execute();
-$dados_buscarResponsavel_todos = $buscarResponsavel_todos->fetchAll(PDO::FETCH_CLASS);
+$numberVoucher = $_POST['numbervoucher'] ?? $_GET['numbervoucher'];
+require_once __DIR__ . '/includes/editar_pax_init.php';
 if( isset($_POST['adm'] ) )
 {
     $idfatura      = $_POST['idfatura'];
