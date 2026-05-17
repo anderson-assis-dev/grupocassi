@@ -10,7 +10,10 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require './../vendor/autoload.php';
 $mail = new PHPMailer(true);
-$numberVoucher = $_POST['numbervoucher'] ?? $_GET['numbervoucher'] ?? null;
+$numberVoucher = $_POST['numbervoucher']
+    ?? $_POST['voucher']
+    ?? $_GET['numbervoucher']
+    ?? null;
 if (!is_string($numberVoucher) || $numberVoucher === '') {
     header('location: home');
     exit;
