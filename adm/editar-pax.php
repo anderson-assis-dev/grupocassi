@@ -162,16 +162,10 @@ if( isset($_POST['atualizarreserva']) )
     $service          = addslashes( trim( $_POST['service']  ) );
     $payment          = addslashes( trim( $_POST['payment']  ) );
     $schedule         = addslashes( trim( $_POST['schedule'] ) );
-    $id_cliente       = $_POST['cliente'];
-    $idempresa       = $_POST['idempresa'];
-    $dadosReservaAu  = $pdo->prepare("select * from `ct_audit` where `voucher` = :numberVoucher ");
-    $dadosReservaAu->execute( array(":numberVoucher" => $voucher ) );
-    $registroAu      =  $dadosReservaAu->fetchAll(PDO::FETCH_CLASS);
-    $contadorAuditoria = $dadosReservaAu->rowCount();
-
+    $id_cliente = $_POST['cliente'];
+    $idempresa  = $_POST['idempresa'];
     $total_servico = $valor * $quantidadePax + (($valor / 2) * $quantidadeChild);
     $tel = $_POST['telefone'];
-   
     $canUpdateIdCliente = $_SESSION['idgerente'] == 2 ? "`idcliente` = $id_cliente, " : null;
     $canUpdateIdEmpresa = "`idempresa` = $idempresa, ";
     $updateReserva1 = $pdo->prepare(
@@ -179,55 +173,21 @@ if( isset($_POST['atualizarreserva']) )
             , `identificacao_mala` = '$identificacaoMala', `incluirtaxamala` = '$incluirtaxamala', qntpessoataxamala = '$qntpessoataxamala'
                    WHERE `ct_reserva`.`numbervoucher` = '$voucher' ");
     $updateReserva1->execute();
-    $sql = "update ct_reserva set data_alteracao = now() where numbervoucher = '".$voucher."'";   
-    $updateData = $pdo->prepare($sql);
-    $updateData->execute();    
-    if( $novostatus == 2 )
-    {
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatusinvoice` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => $novostatus,
-            ":voucher"  => $voucher
-
-        ) );
+    marcarReservaAlterada($pdo, $voucher);
+    $mapaStatusInvoice = [2 => 2, 3 => 4, 4 => 8];
+    if (isset($mapaStatusInvoice[$novostatus])) {
+        setInvoiceStatusFixo($pdo, $voucher, $mapaStatusInvoice[$novostatus]);
     }
-    elseif($novostatus == 4){
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatusinvoice` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => 8,
-            ":voucher"  => $voucher
-
-        ) );
-    }
-    elseif($novostatus == 3){
-        $atualizarStatus = $pdo->prepare(
-            'update `ct_reserva` set `idstatusinvoice` = :sinvoice where numbervoucher = :voucher ');
-        $atualizarStatus->execute( array(
-            ":sinvoice" => 4,
-            ":voucher"  => $voucher
-
-        ) );
-    }
-
-
-    $nameSearchService = $pdo->prepare("select * from `ct_servico` where id = :id ");
-    $nameSearchService->execute( array(":id" => $service) );
-    $searchData = $nameSearchService->fetch(PDO::FETCH_ASSOC);
-
-    $nameStatus = $pdo->prepare('select * from `ct_status` where id = :id');
-    $nameStatus->execute( array(":id" => $novostatus ) );
-    $dadosStatus = $nameStatus->fetch(PDO::FETCH_ASSOC);
-
+    $nomeServico = buscarNomeServico($pdo, (int) $service);
+    $nomeStatus  = buscarNomeStatus($pdo, (int) $novostatus);
     logAudit($pdo, $_POST['voucher'],
-            "A reserva de ".$nomePax." foi atualizada para as seguintes informações: Data de Embarque Inicial: "
-                .date("d-m-Y", strtotime($dataInicio))."<strong> Data de Embarque Final:</strong>  ".date("d-m-Y", strtotime($dataFim)).
-                " <strong> Complemento: </strong> ".$documento."<strong> Valor do Serviço R$ </strong> ".$valor."<strong> Horário de Apanha:</strong>  ".$horaApanha.
-                " <strong> Adultos: </strong> ".$quantidadePax." <strong>Crianças:</strong> ".$quantidadeChild." <strong> Gratuitos: </strong> ".$quantidadeFree.
-                " <strong> Serviço atual: </strong> ".$searchData['fullname'].
-                " <strong> Status: </strong> ".$dadosStatus['fullname']." Telefone: ".$_POST['telefone']
-        );
+        "A reserva de ".$nomePax." foi atualizada para as seguintes informações: Data de Embarque Inicial: "
+            .date("d-m-Y", strtotime($dataInicio))."<strong> Data de Embarque Final:</strong>  ".date("d-m-Y", strtotime($dataFim)).
+            " <strong> Complemento: </strong> ".$documento."<strong> Valor do Serviço R$ </strong> ".$valor."<strong> Horário de Apanha:</strong>  ".$horaApanha.
+            " <strong> Adultos: </strong> ".$quantidadePax." <strong>Crianças:</strong> ".$quantidadeChild." <strong> Gratuitos: </strong> ".$quantidadeFree.
+            " <strong> Serviço atual: </strong> ".$nomeServico.
+            " <strong> Status: </strong> ".$nomeStatus." Telefone: ".$_POST['telefone']
+    );
     if( $_POST['clienteatual'] <> $id_cliente )
     {
         $cliente_atual = $pdo->prepare('select * from `ct_cliente` where `id` = :id ');
@@ -290,16 +250,12 @@ if( isset($_POST['atualizarreserva']) )
             )
         );
 
-        $nameSearchService = $pdo->prepare("select * from `ct_servico` where id = :id ");
-        $nameSearchService->execute( array(":id" => 19 ) );
-        $searchData = $nameSearchService->fetch(PDO::FETCH_ASSOC);
-
+        $nomeServicoTaxa = buscarNomeServico($pdo, 19);
         logAudit($pdo, $_POST['voucher'],
             "Reserva vinculada com as seguintes informações:
                 \n Embarque: ".date('d-m-Y', strtotime($dataInicio))." Apanha: ".$horaApanha." Adultos: ".$quantidadePax." Crianças: ".$quantidadeChild." Free: "
-                    .$quantidadeFree." Serviço: ".$searchData['fullname']. " Complemento: "." Valor R$ 10,00 "
+                    .$quantidadeFree." Serviço: ".$nomeServicoTaxa." Complemento: "." Valor R$ 10,00 "
         );
-
         if($contador_add > 0)
         {
             $vincularServicoVoucher = $pdo->prepare(
@@ -320,16 +276,11 @@ if( isset($_POST['atualizarreserva']) )
                     ":qf"      => addslashes( $dados_add['qfree'])
                 )
             );
-
-            $nameSearchService = $pdo->prepare("select * from `ct_servico` where id = :id ");
-            $nameSearchService->execute( array(":id" => 19 ) );
-            $searchData = $nameSearchService->fetch(PDO::FETCH_ASSOC);
-
             logAudit($pdo, $_POST['voucher'],
-            "Reserva vinculada com as seguintes informações:
+                "Reserva vinculada com as seguintes informações:
                 \n Embarque: ".date('d-m-Y', strtotime($dados_add['dateinput']))." Apanha: ".$dados_add['horaap']." Adultos: ".$dados_add['qpax']." Crianças: ".$dados_add['qchild']." Free: "
-                        . $dados_add['qfree']." Serviço: ".$searchData['fullname']. " Complemento: "." Valor R$ 10,00"
-        );
+                        . $dados_add['qfree']." Serviço: ".$nomeServicoTaxa." Complemento: "." Valor R$ 10,00"
+            );
         }
     }
 
@@ -343,28 +294,20 @@ if( isset($_POST['atualizarreserva']) )
         $confirmar_embarque_por_operador->execute(array(":operador" => $_SESSION['id'], ":idhorario" => $schedule, ":idservico" => $service ,":dataa" => date("Y-m-d"), ":total" => $totalPax));
 
         $buscar_horario = $pdo->prepare('select `schedule` from `ct_service_schedule` where idshedule = :idshedule');
-        $buscar_horario->execute(array(":idshedule" =>$schedule));
+        $buscar_horario->execute(array(":idshedule" => $schedule));
         $dados_busca_horario = $buscar_horario->fetch(PDO::FETCH_ASSOC);
-
-
         logAudit($pdo, $voucher,
-            "Confirmou o horário de embarque para ".$dados_busca_horario['schedule']." do serviço ".$searchData['fullname']
+            "Confirmou o horário de embarque para ".$dados_busca_horario['schedule']." do serviço ".$nomeServico
         );
     }
- 
     if($valor3 <> $valor)
     {
-        
         $confirmacao_horario_embarque = $pdo->prepare("update `ct_reserva` set `fl_altarar_valor_servico` = :confirmacao where `numbervoucher` = :numbervoucher");
         $confirmacao_horario_embarque->execute(array(":confirmacao" => 1, ":numbervoucher" => $voucher));
-
-        logAudit($pdo, $voucher,
-            "Alterou o valor do serviço de R$ ".number_format($_POST['valor2'],2)." para R$ ".$valor
-        );
+        logAudit($pdo, $voucher, "Alterou o valor do serviço de R$ ".number_format($_POST['valor2'], 2)." para R$ ".$valor);
     }
-
     header('location: editar-pax?numbervoucher='.$_POST['voucher']);
-
+    exit;
 }
 if( isset($_POST['serviceadd']) )
 {
@@ -400,64 +343,47 @@ if( isset($_POST['serviceadd']) )
             ":id"       => $idAdd
         )
     );
-    $sql = "update ct_reserva set data_alteracao = now() where numbervoucher = '".$voucher."'";   
-    $updateData = $pdo->prepare($sql);
-    $updateData->execute();
-    $nameSearchService = $pdo->prepare("select * from `ct_servico` where id = :id ");
-    $nameSearchService->execute( array(":id" => $service2) );
-    $searchData = $nameSearchService->fetch(PDO::FETCH_ASSOC);
-
+    marcarReservaAlterada($pdo, $voucher);
+    $nomeServicoAdd = buscarNomeServico($pdo, (int) $service2);
     logAudit($pdo, $_POST['voucher'],
-            "A reserva ADICIONAL foi atualizada para as seguintes informações: Data de Embarque Inicial: "
-                .date("d-m-Y", strtotime($dataInicio))." Data de Embarque Final: ".date("d-m-Y", strtotime($dataFim)).
-                " Complemento: ".$documento2." Valor do Serviço R$ ".$valor2." Horário de Apanha: ".$horaApanha2.
-                " Adultos: ".$qtdpax." Crianças: ".$qchild." Gratuitos: ".$qfree." Serviço atual: ".$searchData['fullname']
-        );
+        "A reserva ADICIONAL foi atualizada para as seguintes informações: Data de Embarque Inicial: "
+            .date("d-m-Y", strtotime($dataInicio))." Data de Embarque Final: ".date("d-m-Y", strtotime($dataFim)).
+            " Complemento: ".$documento2." Valor do Serviço R$ ".$valor2." Horário de Apanha: ".$horaApanha2.
+            " Adultos: ".$qtdpax." Crianças: ".$qchild." Gratuitos: ".$qfree." Serviço atual: ".$nomeServicoAdd
+    );
     if(isset($_POST['confirmarhorarioembarque2']))
     {
         $totalPax2 = $qtdpax+$qchild+$qfree;
         $confirmacao_horario_embarque = $pdo->prepare("update `ct_recentlyadd` set `confirmacao2` = :confirmacao where `id` = :id");
         $confirmacao_horario_embarque->execute(array(":confirmacao" => 1, ":id" => $idAdd));
-
         $confirmar_embarque_por_operador = $pdo->prepare('insert into `ct_confirmacao` values (DEFAULT, :operador, :idhorario, :idservico , :dataa, :total)');
         $confirmar_embarque_por_operador->execute(array(":operador" => $_SESSION['id'], ":idhorario" => $embarque, ":idservico" => $service2 ,":dataa" => date("Y-m-d"), ":total" => $totalPax2));
-
         $buscar_horario = $pdo->prepare('select `schedule` from `ct_service_schedule` where idshedule = :idshedule order by `schedule`');
-        $buscar_horario->execute(array(":idshedule" =>$embarque));
+        $buscar_horario->execute(array(":idshedule" => $embarque));
         $dados_busca_horario = $buscar_horario->fetch(PDO::FETCH_ASSOC);
-
-
         logAudit($pdo, $voucher,
-            "Confirmou o horário de embarque para ".$dados_busca_horario['schedule']." do serviço ".$searchData['fullname']
+            "Confirmou o horário de embarque para ".$dados_busca_horario['schedule']." do serviço ".$nomeServicoAdd
         );
     }
     if($valor3 <> $valor2)
     {
-        
         $confirmacao_horario_embarque = $pdo->prepare("update `ct_recentlyadd` set `fl_altarar_valor_servico` = :confirmacao where `id` = :id");
         $confirmacao_horario_embarque->execute(array(":confirmacao" => 1, ":id" => $idAdd));
-        
         logAudit($pdo, $_POST['voucher'],
-            "Alterou o valor do serviço adicional de R$ ".number_format($_POST['valor2'],2)." para R$ ".$valor2
+            "Alterou o valor do serviço adicional de R$ ".number_format($_POST['valor2'], 2)." para R$ ".$valor2
         );
-
     }
     header('location: editar-pax?numbervoucher='.$_POST['voucher']);
-
+    exit;
 }
 if( isset($_POST['deleteserviceadd']) )
 {
-    $idAdd            = $_POST['idAdd'];
-
-    $deleteForever  = $pdo->prepare('delete from `ct_recentlyadd` where id = :id ');
-    $deleteForever->execute( array(":id" => $idAdd) );
-
-    logAudit($pdo, $_POST['voucher'],
-            "A reserva adicional foi excluida "
-        );
-
+    $idAdd = $_POST['idAdd'];
+    $deleteForever = $pdo->prepare('delete from `ct_recentlyadd` where id = :id');
+    $deleteForever->execute([":id" => $idAdd]);
+    logAudit($pdo, $_POST['voucher'], "A reserva adicional foi excluida ");
     header('location: editar-pax?numbervoucher='.$_POST['voucher']);
-
+    exit;
 }
 if( isset($_POST['updatecredit'] ) )
 {
@@ -469,8 +395,8 @@ if( isset($_POST['updatecredit'] ) )
     $updateValor = $pdo->prepare('update `ct_createfaturacredit` set `valuecredit` = :newcredit, `idaccountcurrent` = :pagamento where `id` = :id ');
     $updateValor->execute([":newcredit" => str_replace(",", ".", str_replace(".", ".", $_POST['valor'])), ":pagamento" => $idPagamento, ":id" => $idcredit]);
 
-    $pdo->prepare("update ct_reserva set data_alteracao = now() where numbervoucher = :v")->execute([':v' => $_POST['voucher']]);
-    logAudit($pdo, $_POST['voucher'], "Valor do crédito atualizado. para R$ " . $valor);
+    marcarReservaAlterada($pdo, $_POST['voucher']);
+    logAudit($pdo, $_POST['voucher'], "Valor do crédito atualizado. para R$ ".$valor);
     setInvoiceStatus($pdo, $_POST['voucher']);
     setFlash('success', "Crédito atualizado no valor de R$ {$valor} para o voucher {$_POST['voucher']}");
     header('location: editar-pax?numbervoucher=' . $_POST['voucher']);
@@ -492,7 +418,7 @@ if( isset($_POST['deletecredit'] ) )
     $idcredit = $_POST['idcredit'];
     $updateValor = $pdo->prepare('delete from `ct_createfaturacredit` where `id` = :id');
     $updateValor->execute([":id" => $idcredit]);
-    $pdo->prepare('update ct_reserva set data_alteracao = now() where numbervoucher = :v')->execute([':v' => $_POST['voucher']]);
+    marcarReservaAlterada($pdo, $_POST['voucher']);
     logAudit($pdo, $_POST['voucher'], "Crédito removido");
     setInvoiceStatus($pdo, $_POST['voucher']);
     syncReservaTotais($pdo, $_POST['voucher']);
@@ -679,7 +605,7 @@ if( isset($_POST['Addcredito'] ) )
         "idusr"        => $_POST['responsavel'],
         ":abertura"    => date("Y-m-d"),
     ]);
-    $pdo->prepare('update ct_reserva set data_alteracao = now() where numbervoucher = :v')->execute([':v' => $voucher]);
+    marcarReservaAlterada($pdo, $voucher);
     $novoCredito = $pdo->prepare(
         "insert into ct_createfaturacredit set `numbervoucher` = :voucher, tarifa = :valor, `desccredit` = :desc, `datacredit` = :data,
          `valuecredit` = :valor2, `valueguia` = '0.00', `valueagente` = '0.00', `idaccountcurrent` = :ccfp, `idplancount` = 1, `idusr` = :resp");
@@ -746,16 +672,14 @@ if( isset($_POST['vincular']) )
             )
         );
 
-        $nameSearchService = $pdo->prepare("select * from `ct_servico` where id = :id ");
-        $nameSearchService->execute( array(":id" => $service) );
-        $searchData = $nameSearchService->fetch(PDO::FETCH_ASSOC);
-
+        $nomeServicoVinc = buscarNomeServico($pdo, (int) $service);
         logAudit($pdo, $numeroVoucher,
             "Reserva vinculada com as seguintes informações:
                 \n Embarque: ".date('d-m-Y', strtotime($dataInicio))." Apanha: ".$horarioap." Adultos: ".$quantiPax." Crianças: ".$quantiChild." Free: "
-                    .$quantiFree." Serviço: ".$searchData['fullname']. " Complemento: ".$documento." Valor R$ ".$valor
+                    .$quantiFree." Serviço: ".$nomeServicoVinc." Complemento: ".$documento." Valor R$ ".$valor
         );
         header('location: editar-pax?numbervoucher='.$_POST['voucher']);
+        exit;
     }
 }
 if( isset($_POST['incluircreditofatura']) ) {
