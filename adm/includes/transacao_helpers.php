@@ -28,6 +28,13 @@ function transacaoValorFormatado($valor): string
 {
     return number_format((float)$valor, 2, ',', '.');
 }
+function transacaoData($data): string
+{
+    if (empty($data) || $data === '0000-00-00') {
+        return '—';
+    }
+    return date('d/m/Y', strtotime($data));
+}
 function transacaoStatusClass($idstatus): string
 {
     $map = [1 => 'tx-badge--pendente', 2 => 'tx-badge--pago', 3 => 'tx-badge--cancelado'];

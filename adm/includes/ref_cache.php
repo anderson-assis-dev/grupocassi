@@ -84,3 +84,19 @@ function refStatusInvoice(PDO $pdo): array
 {
     return _refLoad($pdo, 'status_invoice', 'SELECT * FROM `ct_statusinvoice`');
 }
+function refFornecedores(PDO $pdo): array
+{
+    return _refLoad($pdo, 'fornecedores', 'SELECT * FROM `ct_fornecedor` ORDER BY fullname');
+}
+function refTipoCaixa(PDO $pdo): array
+{
+    return _refLoad($pdo, 'tipo_caixa', 'SELECT * FROM `ct_tipocaixa` ORDER BY name');
+}
+function refContaCorrente(PDO $pdo): array
+{
+    return _refLoad($pdo, 'conta_corrente', 'SELECT * FROM `ct_currentaccount` ORDER BY name');
+}
+function refPlanoContas(PDO $pdo): array
+{
+    return _refLoad($pdo, 'plano_contas', 'SELECT * FROM `ct_planaccounts` ORDER BY name');
+}
