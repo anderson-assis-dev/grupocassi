@@ -169,8 +169,16 @@ function caixaStatusClass($idstatus): string
 .caixa-page .caixa-badge--pendente{background:#fef3c7;color:#92400e}
 .caixa-page .caixa-badge--cancelado{background:#fee2e2;color:#991b1b}
 .caixa-page .caixa-badge--default{background:#e2e8f0;color:#475569}
-.caixa-page .caixa-actions{display:flex;flex-wrap:wrap;gap:8px}
+.caixa-page .caixa-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:240px}
 .caixa-page .caixa-table-wrap{margin-top:20px}
+.caixa-page .caixa-table-wrap .table-responsive{overflow-x:auto}
+.caixa-page #caixa-table tbody tr.caixa-row-click{cursor:pointer}
+.caixa-page #caixa-table tbody tr.caixa-row-click:hover{background:#eef6ff!important}
+.caixa-page .caixa-id-link{color:#0b5f95;font-weight:800;text-decoration:none}
+.caixa-page .caixa-id-link:hover{text-decoration:underline}
+.caixa-page #caixa-table th.caixa-col-acoes,
+.caixa-page #caixa-table td.caixa-col-acoes{background:#fff;box-shadow:-8px 0 16px rgba(15,23,42,.06);position:sticky;right:0;z-index:2}
+.caixa-page #caixa-table thead th.caixa-col-acoes{z-index:3}
 .caixa-page .caixa-toolbar{align-items:center;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;margin-bottom:14px}
 .caixa-page .caixa-toolbar small{color:#64748b;font-size:13px}
 .caixa-page .caixa-form-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
@@ -436,49 +444,46 @@ if (!$mostrarUsuario) continue;
 <small><?= $modoPesquisa ? 'Exibindo resultados filtrados' : 'Exibindo vencimentos de hoje' ?></small>
 </div>
 <div class="table-responsive">
-<table id="example23" class="table table-bordered">
+<table id="caixa-table" class="table table-bordered">
 <thead>
 <tr>
 <th>Nº</th>
 <th>Vencimento</th>
 <th>Pagamento</th>
-<th>Competência</th>
 <th>Nome</th>
 <th>Descrição</th>
 <th>Favorecido</th>
+<th>Valor</th>
+<th>Situação</th>
 <th>Empresa</th>
 <th>Tipo</th>
 <th>Conta</th>
 <th>Plano</th>
-<th>Valor</th>
-<th>Situação</th>
-<th>Ações</th>
+<th>Competência</th>
+<th class="caixa-col-acoes">Ações</th>
 </tr>
 </thead>
 <tbody>
 <?php foreach ($registroCaixa as $item): ?>
-<tr>
-<td><?= (int)$item->id ?></td>
+<tr class="caixa-row-click" data-id="<?= (int)$item->id ?>">
+<td><a class="caixa-id-link" href="editar-transacao?idtransacao=<?= (int)$item->id ?>">#<?= (int)$item->id ?></a></td>
 <td><?= date('d/m/Y', strtotime($item->datevencimento)) ?></td>
 <td><?= $item->datepagamento ? date('d/m/Y', strtotime($item->datepagamento)) : '—' ?></td>
-<td><?= $item->datecompetencia ? date('d/m/Y', strtotime($item->datecompetencia)) : '—' ?></td>
 <td><?= caixaEsc($item->nome) ?></td>
 <td><?= caixaEsc($item->descricao) ?></td>
 <td><?= caixaEsc($item->fornecedor) ?></td>
+<td data-order="<?= (float)$item->valor ?>"><strong>R$ <?= number_format((float)$item->valor, 2, ',', '.') ?></strong></td>
+<td><span class="caixa-badge <?= caixaStatusClass($item->idstatus ?? 0) ?>"><?= caixaEsc($item->situacao) ?></span></td>
 <td><?= caixaEsc($item->empresa) ?></td>
 <td><?= caixaEsc($item->tipo) ?></td>
 <td><?= caixaEsc($item->conta) ?></td>
 <td><?= caixaEsc($item->plano) ?></td>
-<td data-order="<?= (float)$item->valor ?>"><strong>R$ <?= number_format((float)$item->valor, 2, ',', '.') ?></strong></td>
-<td><span class="caixa-badge <?= caixaStatusClass($item->idstatus ?? 0) ?>"><?= caixaEsc($item->situacao) ?></span></td>
-<td>
+<td><?= $item->datecompetencia ? date('d/m/Y', strtotime($item->datecompetencia)) : '—' ?></td>
+<td class="caixa-col-acoes">
 <div class="caixa-actions">
-<form action="./editar-transacao.php" method="post">
-<input type="hidden" name="idtransacao" value="<?= (int)$item->id ?>">
-<button type="submit" name="editartransacao" class="action-icon-button" title="Editar">
+<a href="editar-transacao?idtransacao=<?= (int)$item->id ?>" class="action-icon-button" title="Editar">
 <svg><use href="#icon-edit"></use></svg><span>Editar</span>
-</button>
-</form>
+</a>
 <form action="./relatorio/recibo-transacao.php" target="_blank" method="post">
 <input type="hidden" name="idtransacao" value="<?= (int)$item->id ?>">
 <button type="submit" class="action-icon-button" title="Recibo">
@@ -532,7 +537,35 @@ if(!confirm('Deseja remover esta transação? Esta ação não pode ser desfeita
 e.preventDefault();
 }
 });
+form.addEventListener('click',function(e){e.stopPropagation()});
 });
+document.querySelectorAll('#caixa-table .caixa-actions a, #caixa-table .caixa-actions button, #caixa-table .caixa-actions form').forEach(function(el){
+el.addEventListener('click',function(e){e.stopPropagation()});
+});
+document.querySelectorAll('#caixa-table tbody tr.caixa-row-click').forEach(function(row){
+row.addEventListener('click',function(){
+var id=row.getAttribute('data-id');
+if(id){window.location.href='editar-transacao?idtransacao='+id;}
+});
+});
+if(window.jQuery&&jQuery.fn.DataTable&&document.getElementById('caixa-table')){
+jQuery('#caixa-table').DataTable({
+dom:'Bfrtip',
+paging:false,
+order:[[3,'asc'],[4,'asc']],
+scrollX:true,
+language:{
+sProcessing:'Processando',
+sZeroRecords:'Não encontramos registros',
+sEmptyTable:'Dados não estavam disponíveis nesta tabela',
+sInfo:'Mostrando registros del _START_ al _END_ de um total de _TOTAL_ registros',
+sInfoEmpty:'Mostrando registros del 0 a 0 de um total de 0 registros',
+sSearch:'Buscar:',
+oPaginate:{sFirst:'Primeira',sLast:'Última',sNext:'Próximo',sPrevious:'Anterior'}
+},
+buttons:['csv','excel',{extend:'copyHtml5',text:'Copiar'},{extend:'pdfHtml5',text:'Imprimir',orientation:'landscape',pageSize:'LEGAL'}]
+});
+}
 var btnHoje=document.getElementById('btnHoje');
 if(btnHoje){
 btnHoje.addEventListener('click',function(){
