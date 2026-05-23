@@ -377,8 +377,8 @@ if( isset($_POST['voucherEmail'])) {
         $mail->SMTPAuth   = true;
         $mail->Username   = env('MAIL_USERNAME');
         $mail->Password   = env('MAIL_PASSWORD');
-        $mail->SMTPSecure = env('MAIL_ENCRYPTION', 'tls');
-        $mail->Port       = (int) env('MAIL_PORT', 587);
+        $mail->SMTPSecure = env('MAIL_ENCRYPTION', PHPMailer::ENCRYPTION_SMTPS);
+        $mail->Port       = (int) env('MAIL_PORT', 465);
         $mail->setFrom(env('MAIL_FROM_ADDRESS'), env('MAIL_FROM_NAME', ''));
         $mail->addAddress($_POST['emailcliente'], 'Cliente');
         $mail->addReplyTo(env('MAIL_REPLY_TO'), 'Information');

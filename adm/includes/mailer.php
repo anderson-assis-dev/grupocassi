@@ -37,8 +37,8 @@ function enviarEmail($to, string $subject, string $body, array $opts = []): bool
     $mail->SMTPAuth   = true;
     $mail->Username   = env('MAIL_USERNAME');
     $mail->Password   = env('MAIL_PASSWORD');
-    $mail->SMTPSecure = env('MAIL_ENCRYPTION', PHPMailer::ENCRYPTION_STARTTLS);
-    $mail->Port       = (int) env('MAIL_PORT', 587);
+    $mail->SMTPSecure = env('MAIL_ENCRYPTION', PHPMailer::ENCRYPTION_SMTPS);
+    $mail->Port       = (int) env('MAIL_PORT', 465);
     $mail->setFrom(env('MAIL_FROM_ADDRESS'), env('MAIL_FROM_NAME', ''));
     foreach ((array) $to as $addr) {
         $mail->addAddress($addr);
