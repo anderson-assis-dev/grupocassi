@@ -1,101 +1,78 @@
 <?php
-/**
- * Template do e-mail "Meu Voucher".
- * Variaveis esperadas: $voucher, $tipo.
- *
- * Uso:
- *   $body = renderEmailVoucher($voucher, $tipo);
- */
-
-function renderEmailVoucher(string $voucher, string $tipo): string
+require_once __DIR__ . '/../voucher_document.php';
+function renderEmailVoucher(string $voucher, string $tipo, string $passageiro = '', bool $folharosto = false): string
 {
     $voucher = htmlspecialchars($voucher, ENT_QUOTES, 'UTF-8');
-    $tipo    = htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8');
-    $link    = "http://grupocassi.com.br/vouchercliente.php?voucher={$voucher}&tipo={$tipo}";
-
+    $passageiro = htmlspecialchars($passageiro, ENT_QUOTES, 'UTF-8');
+    $tituloDoc = $folharosto ? 'Folha de Rosto' : 'Voucher';
+    $saudacao = $passageiro !== '' ? "Olá, <strong>{$passageiro}</strong>." : 'Olá.';
+    $logoSrc = logoCassiDataUri();
     ob_start();
     ?>
-<body leftmargin="0" marginwidth="0" topmargin="0" marginheight="0" offset="0">
-<div id="wrapper" dir="ltr" style="margin: 0; padding: 70px 0 70px 0; -webkit-text-size-adjust: none !important; width: 100%;">
-    <table border="0" cellpadding="0" cellspacing="0" height="100%" width="100%">
-        <tr>
-            <td align="center" valign="top">
-                <div id="template_header_image">
-                    <p style="margin-top: 0; background-color: #4b3bfc;">
-                        <img src="http://cassiturismo.com.br/wp-content/themes/travel-stories/images/cassi.png"
-                             alt="Cassi Turismo"
-                             style="border: none; display: inline-block; font-size: 14px; font-weight: bold; height: auto; outline: none; text-decoration: none; text-transform: capitalize; vertical-align: middle; margin-right: 10px;">
-                    </p>
-                </div>
-                <table border="0" cellpadding="0" cellspacing="0" width="600" id="template_container"
-                       style="box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important; background-color: #ffffff; border: 1px solid #4335e3; border-radius: 3px !important;">
-                    <tr>
-                        <td align="center" valign="top">
-                            <table border="0" cellpadding="0" cellspacing="0" width="600" id="template_header"
-                                   style="background-color: #3f0ed1; border-radius: 3px 3px 0 0 !important; color: #ffffff; border-bottom: 0; font-weight: bold; line-height: 100%; vertical-align: middle;">
-                                <tr>
-                                    <td id="header_wrapper" style="padding: 36px 48px; display: block;">
-                                        <h1 style="color: #ffffff; font-size: 30px; font-weight: 300; line-height: 150%; margin: 0; text-align: left; text-shadow: 0 1px 0 #653eda;">Meu Voucher</h1>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td align="center" valign="top">
-                            <table border="0" cellpadding="0" cellspacing="0" width="600" id="template_body">
-                                <tr>
-                                    <td valign="top" id="body_content" style="background-color: #ffffff;">
-                                        <table border="0" cellpadding="20" cellspacing="0" width="100%">
-                                            <tr>
-                                                <td valign="top" style="padding: 48px 48px 0;">
-                                                    <div id="body_content_inner" style="color: #636363; font-size: 14px; line-height: 150%; text-align: left;">
-                                                        <p style="text-align: justify;">
-                                                            Há 15 anos no mercado a nossa empresa vem desenvolvendo o trade turístico no estado da Bahia
-                                                            e temos como nosso maior mérito a criação do transfer semi-terrestre para Morro de São Paulo.
-                                                            Equipados com uma frota marítima e terrestre de última geração desempenhamos nossos serviços
-                                                            com altíssimo padrão de qualidade sempre presando pelo conforto e segurança dos passageiros.
-                                                            Nossas agências são estrategicamente posicionadas para proporcionar o melhor atendimento
-                                                            possível, oferecendo uma estrutura com alto padrão de qualidade onde o turista pode encontrar,
-                                                            caixa eletrônico, lanchonete, ar-condicionado, Wifi dentre outros ítens de conforto que só a
-                                                            Cassi Turismo oferece.
-                                                        </p>
-                                                        <h2 style="color: #3f0ed1; display: block; font-size: 18px; font-weight: bold; line-height: 130%; margin: 0 0 18px; text-align: left;">
-                                                            <a href="<?= $link ?>">Visualizar Voucher</a>
-                                                        </h2>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td align="center" valign="top">
-                            <table border="0" cellpadding="10" cellspacing="0" width="600" id="template_footer">
-                                <tr>
-                                    <td valign="top" style="padding: 0; -webkit-border-radius: 6px;">
-                                        <table border="0" cellpadding="10" cellspacing="0" width="100%">
-                                            <tr>
-                                                <td colspan="2" valign="middle" id="credit"
-                                                    style="padding: 0 48px 48px 48px; -webkit-border-radius: 6px; border: 0; color: #8c6ee3; font-family: Arial; font-size: 12px; line-height: 125%; text-align: center;">
-                                                    <h1>Cassi Turismo 16 Anos</h1>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
-</div>
+<body style="margin:0;padding:0;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6fb;padding:32px 16px;">
+    <tr>
+        <td align="center">
+            <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(30,71,112,0.12);">
+                <tr>
+                    <td style="background:#1E4770;padding:28px 32px;text-align:center;">
+                        <?php if ($logoSrc !== '') { ?>
+                        <img src="<?= $logoSrc ?>" alt="Cassi Turismo" width="200" height="24" style="width:200px;height:auto;max-width:200px;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;">
+                        <?php } ?>
+                        <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:600;"><?= $tituloDoc ?></h1>
+                        <p style="margin:8px 0 0;color:#d7e6f5;font-size:14px;">Nº <?= $voucher ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:32px;color:#334155;font-size:15px;line-height:1.7;">
+                        <p style="margin:0 0 16px;"><?= $saudacao ?></p>
+                        <p style="margin:0 0 16px;">
+                            Segue em anexo o <?= strtolower($tituloDoc) ?> da sua reserva com a <strong>Cassi Turismo</strong>.
+                            Guarde o arquivo PDF para apresentação no embarque e conferência dos serviços contratados.
+                        </p>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 20px;">
+                            <tr>
+                                <td style="padding:16px 18px;">
+                                    <p style="margin:0 0 6px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;">Documento anexo</p>
+                                    <p style="margin:0;font-size:16px;color:#1E4770;font-weight:700;"><?= $tituloDoc ?> - <?= $voucher ?>.pdf</p>
+                                </td>
+                            </tr>
+                        </table>
+                        <p style="margin:0 0 16px;">
+                            Há mais de 15 anos desenvolvemos o trade turístico na Bahia, com transfer semi-terrestre para Morro de São Paulo,
+                            frota marítima e terrestre moderna e atendimento com alto padrão de qualidade.
+                        </p>
+                        <p style="margin:0;">
+                            Dúvidas? Responda este e-mail ou fale conosco:<br>
+                            <strong>(71) 99121-1111</strong> | <strong>(71) 98444-4444</strong><br>
+                            cassiturismo.com.br
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="background:#eef2ff;padding:20px 32px;text-align:center;color:#1E4770;font-size:13px;">
+                        Cassi Turismo · Transfer e receptivo na Bahia
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
 </body>
     <?php
     return (string) ob_get_clean();
+}
+function renderEmailVoucherAlt(string $voucher, string $passageiro, bool $folharosto): string
+{
+    $tituloDoc = $folharosto ? 'Folha de Rosto' : 'Voucher';
+    $linhas = [
+        'Cassi Turismo',
+        $tituloDoc . ' nº ' . $voucher,
+    ];
+    if ($passageiro !== '') {
+        $linhas[] = 'Passageiro: ' . $passageiro;
+    }
+    $linhas[] = 'O documento em PDF está em anexo neste e-mail.';
+    $linhas[] = 'Contato: (71) 99121-1111 | (71) 98444-4444 | cassiturismo.com.br';
+    return implode("\n", $linhas);
 }

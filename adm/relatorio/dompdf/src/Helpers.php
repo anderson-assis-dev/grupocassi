@@ -503,7 +503,7 @@ class Helpers
     public static function record_warnings($errno, $errstr, $errfile, $errline)
     {
         // Not a warning or notice
-        if (!($errno & (E_WARNING | E_NOTICE | E_USER_NOTICE | E_USER_WARNING))) {
+        if (!($errno & (E_WARNING | E_NOTICE | E_USER_NOTICE | E_USER_WARNING | E_DEPRECATED | E_USER_DEPRECATED))) {
             throw new Exception($errstr . " $errno");
         }
 
@@ -834,9 +834,9 @@ class Helpers
                 $uri = Helpers::encodeURI($uri);
             }
             if (isset($maxlen)) {
-                $result = file_get_contents($uri, null, $context, $offset, $maxlen);
+                $result = file_get_contents($uri, false, $context, $offset, $maxlen);
             } else {
-                $result = file_get_contents($uri, null, $context, $offset);
+                $result = file_get_contents($uri, false, $context, $offset);
             }
             if (isset($http_response_header)) {
                 $headers = $http_response_header;

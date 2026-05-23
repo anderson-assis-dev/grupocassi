@@ -121,7 +121,7 @@ class Inline extends AbstractRenderer
                 $w += (float)$child_w;
             }
 
-            $h = max($h, $child_h);
+            $h = max((float)$h, (float)$child_h);
 
             if ($DEBUGLAYOUTINLINE) {
                 $this->_debug_layout($child->get_border_box(), "blue");
@@ -149,8 +149,8 @@ class Inline extends AbstractRenderer
         }
 
         // Add the border widths
-        $w += (float)$widths[1] + (float)$widths[3];
-        $h += (float)$widths[0] + (float)$widths[2];
+        $w = (float)$w + (float)$widths[1] + (float)$widths[3];
+        $h = (float)$h + (float)$widths[0] + (float)$widths[2];
 
         // make sure the border and background start inside the left margin
         $left_margin = (float)$style->length_in_pt($style->margin_left);

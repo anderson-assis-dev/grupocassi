@@ -59,13 +59,17 @@ function enviarEmail($to, string $subject, string $body, array $opts = []): bool
         }
     }
     if (!empty($opts['attachments'])) {
-        foreach ($opts['attachments'] as $path) {
-            $mail->addAttachment($path);
+        foreach ((array) $opts['attachments'] as $i => $path) {
+            $name = $opts['attachmentNames'][$i] ?? basename($path);
+            $mail->addAttachment($path, $name);
         }
     }
     $mail->isHTML($opts['isHtml'] ?? true);
     $mail->Subject = $subject;
     $mail->Body    = $body;
+    if (!empty($opts['altBody'])) {
+        $mail->AltBody = $opts['altBody'];
+    }
     return $mail->send();
 }
 
@@ -77,12 +81,25 @@ function enviarEmail($to, string $subject, string $body, array $opts = []): bool
  * @param string $tipo    Tipo do voucher.
  * @return bool
  */
-function enviarVoucherCliente(string $email, string $voucher, string $tipo): bool
+function enviarVoucherCliente(PDO $pdo, string $email, string $voucher, string $tipo, string $passageiro = '', bool $folharosto = false): bool
 {
     require_once __DIR__ . '/emails/voucher.php';
-    return enviarEmail(
-        $email,
-        'Meu Voucher - Cassi Turismo',
-        renderEmailVoucher($voucher, $tipo)
-    );
+    require_once __DIR__ . '/voucher_document.php';
+    $pdf = gerarVoucherPdf($pdo, $voucher, $folharosto);
+    try {
+        return enviarEmail(
+            $email,
+            ($folharosto ? 'Folha de Rosto' : 'Meu Voucher') . ' - Cassi Turismo',
+            renderEmailVoucher($voucher, $tipo, $passageiro, $folharosto),
+            [
+                'attachments' => [$pdf['path']],
+                'attachmentNames' => [$pdf['filename']],
+                'altBody' => renderEmailVoucherAlt($voucher, $passageiro, $folharosto),
+            ]
+        );
+    } finally {
+        if (is_file($pdf['path'])) {
+            unlink($pdf['path']);
+        }
+    }
 }
