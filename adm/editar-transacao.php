@@ -215,7 +215,7 @@ $valorFormatado = transacaoValorFormatado($registro['valor']);
 <form action="./relatorio/recibo-transacao.php" target="_blank" method="post" class="tx-form-actions" style="margin-top:14px">
 <input type="hidden" name="idtransacao" value="<?= (int)$registro['id'] ?>">
 <button type="submit" class="btn btn-outline-success">
-<svg><use href="#icon-print"></use></svg><span>Gerar recibo PDF</span>
+<svg><use href="#icon-print"></use></svg><span>Imprimir recibo</span>
 </button>
 </form>
 </div>

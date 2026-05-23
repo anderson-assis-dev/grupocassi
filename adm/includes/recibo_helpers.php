@@ -111,25 +111,56 @@ function reciboCarregar(PDO $pdo, array $input): ?array
 function reciboStyles(): string
 {
     return '<style>
-    body{font-family:DejaVu Sans,sans-serif;font-size:12px;color:#1f2937;margin:0;padding:24px}
-    .recibo-wrap{max-width:720px;margin:0 auto}
-    .recibo-logo{text-align:center;margin-bottom:18px}
-    .recibo-logo img{max-width:280px;height:auto}
-    .recibo-head{border-bottom:2px solid #1e4770;padding-bottom:14px;margin-bottom:22px;text-align:center}
-    .recibo-title{font-size:20px;font-weight:700;color:#1e4770;margin:0 0 6px}
-    .recibo-meta{color:#64748b;font-size:10px;margin:2px 0}
-    .recibo-body{font-size:13px;line-height:1.7;margin:28px 0;text-align:justify}
-    .recibo-valor{font-size:18px;font-weight:700;color:#0f7a49;text-align:right;margin:18px 0}
-    .recibo-campo{border:1px solid #dce3ec;border-radius:8px;padding:12px 14px;margin:14px 0;background:#f8fafc}
-    .recibo-campo label{color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:6px}
+    @page{size:A4;margin:0}
+    html,body{margin:0;padding:0;background:#eef2f7;color:#1f2937}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:13px}
+    .recibo-toolbar{align-items:center;background:#1e4770;box-shadow:0 4px 16px rgba(15,23,42,.18);display:flex;gap:10px;justify-content:center;left:0;padding:12px 16px;position:fixed;right:0;top:0;z-index:1000}
+    .recibo-toolbar button{background:#fff;border:0;border-radius:8px;color:#1e4770;cursor:pointer;font-size:14px;font-weight:700;min-width:120px;padding:10px 18px}
+    .recibo-toolbar button:hover{background:#f8fafc}
+    .recibo-toolbar span{color:rgba(255,255,255,.85);font-size:13px}
+    .recibo-page{margin:72px auto 24px;max-width:760px;padding:0 16px}
+    .recibo-sheet{background:#fff;border:1px solid #dce3ec;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,.08);padding:28px 32px 36px}
+    .recibo-wrap{margin:0 auto;max-width:680px}
+    .recibo-logo{margin-bottom:18px;text-align:center}
+    .recibo-logo img{height:auto;max-width:280px}
+    .recibo-head{border-bottom:2px solid #1e4770;margin-bottom:22px;padding-bottom:14px;text-align:center}
+    .recibo-title{color:#1e4770;font-size:22px;font-weight:700;margin:0 0 6px}
+    .recibo-meta{color:#64748b;font-size:11px;margin:2px 0}
+    .recibo-body{font-size:14px;line-height:1.75;margin:28px 0;text-align:justify}
+    .recibo-valor{color:#0f7a49;font-size:20px;font-weight:700;margin:18px 0;text-align:right}
+    .recibo-campo{background:#f8fafc;border:1px solid #dce3ec;border-radius:8px;margin:14px 0;padding:12px 14px}
+    .recibo-campo label{color:#64748b;display:block;font-size:10px;font-weight:700;margin-bottom:6px;text-transform:uppercase}
     .recibo-linha{border-bottom:1px solid #cbd5e1;height:22px;margin-top:4px}
-    .recibo-local{margin:36px 0 18px;font-size:13px}
+    .recibo-local{font-size:13px;margin:36px 0 18px}
     .recibo-assinatura{margin-top:48px;text-align:center}
-    .recibo-assinatura-linha{border-top:1px solid #1f2937;width:80%;margin:0 auto 10px}
-    .recibo-assinatura-nome{font-weight:700;font-size:13px}
-    .recibo-grid-2{width:100%;margin-top:12px}
-    .recibo-grid-2 td{width:50%;padding:6px 8px 6px 0;vertical-align:top}
+    .recibo-assinatura-linha{border-top:1px solid #1f2937;margin:0 auto 10px;width:80%}
+    .recibo-assinatura-nome{font-size:13px;font-weight:700}
+    .recibo-grid-2{margin-top:12px;width:100%}
+    .recibo-grid-2 td{padding:6px 8px 6px 0;vertical-align:top;width:50%}
+    @media print{
+    .recibo-toolbar{display:none!important}
+    html,body{background:#fff!important}
+    .recibo-page{margin:0!important;max-width:none!important;padding:0!important}
+    .recibo-sheet{border:0!important;border-radius:0!important;box-shadow:none!important;padding:18mm 16mm!important}
+    .recibo-wrap{max-width:none!important}
+    }
     </style>';
+}
+function reciboPrintScript(): string
+{
+    return '<script>
+    function reciboImprimir(){window.print()}
+    window.addEventListener("load",function(){setTimeout(reciboImprimir,300)});
+    window.addEventListener("afterprint",function(){if(window.opener){window.close()}});
+    </script>';
+}
+function reciboPrintToolbar(int $id): string
+{
+    return '<div class="recibo-toolbar no-print">'
+        . '<span>Recibo Nº ' . $id . '</span>'
+        . '<button type="button" onclick="reciboImprimir()">Imprimir</button>'
+        . '<button type="button" onclick="window.close()">Fechar</button>'
+        . '</div>';
 }
 function reciboMeta(array $r): string
 {
@@ -144,9 +175,8 @@ function reciboAssinatura(array $r): string
 {
     return '<div class="recibo-assinatura"><div class="recibo-assinatura-linha"></div><div class="recibo-assinatura-nome">' . reciboEsc($r['nome'] ?? '') . '</div></div>';
 }
-function reciboHtml(array $r, string $tipo): string
+function reciboConteudo(array $r, string $tipo): string
 {
-    $styles = reciboStyles();
     $id = (int)($r['id'] ?? 0);
     $valor = reciboValor($r['valor'] ?? 0);
     $descricao = reciboEsc($r['descricao'] ?? '');
@@ -154,45 +184,62 @@ function reciboHtml(array $r, string $tipo): string
     $logoPadrao = '../../images/logo.png';
     $logoFolga = '../../images/logo2.png';
     if ($tipo === 'combustivel') {
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo Combustível #' . $id . '</title>' . $styles . '</head><body><div class="recibo-wrap">'
+        return '<div class="recibo-wrap">'
             . '<div class="recibo-head"><div class="recibo-title">COMBUSTÍVEL</div><div class="recibo-meta">Nº ' . $id . '</div>' . reciboMeta($r) . '</div>'
             . '<div class="recibo-body">Recebi da <strong>CASSI TURISMO</strong> a importância de <strong>R$ ' . $valor . '</strong>, referente a ' . $descricao . '.</div>'
             . '<table class="recibo-grid-2"><tr><td><div class="recibo-campo"><label>KM início</label><div class="recibo-linha"></div></div></td><td><div class="recibo-campo"><label>KM final</label><div class="recibo-linha"></div></div></td></tr></table>'
             . '<div class="recibo-campo"><label>Placa do carro</label><div class="recibo-linha"></div></div>'
             . '<div class="recibo-campo"><label>Rota</label><div class="recibo-linha"></div></div>'
             . '<div class="recibo-local">Salvador, ' . $dataVenc . '</div>'
-            . reciboAssinatura($r) . '</div></body></html>';
+            . reciboAssinatura($r) . '</div>';
     }
     if ($tipo === 'prestacao') {
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo #' . $id . '</title>' . $styles . '</head><body><div class="recibo-wrap">'
+        return '<div class="recibo-wrap">'
             . '<div class="recibo-head"><div class="recibo-title">RECIBO Nº ' . $id . '</div>' . reciboMeta($r) . '</div>'
             . '<div class="recibo-body">Recebi da <strong>CASSI TURISMO</strong> a importância de <strong>R$ ' . $valor . '</strong>, referente a ' . $descricao . '.</div>'
             . '<div class="recibo-local">Salvador, ' . $dataVenc . '</div>'
             . '<div class="recibo-campo"><label>Data de recebimento</label><div class="recibo-linha">____/____/______</div></div>'
-            . reciboAssinatura($r) . '</div></body></html>';
+            . reciboAssinatura($r) . '</div>';
     }
     if ($tipo === 'guia') {
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo Guia #' . $id . '</title>' . $styles . '</head><body><div class="recibo-wrap">'
+        return '<div class="recibo-wrap">'
             . '<div class="recibo-head"><div class="recibo-title">RECIBO Nº ' . $id . '</div>' . reciboMeta($r) . '</div>'
             . '<div class="recibo-body">Recebi da <strong>CASSI TURISMO</strong> a importância de <strong>R$ ' . $valor . '</strong>, referente a ' . $descricao . '.</div>'
             . '<div class="recibo-local">Salvador, ' . $dataVenc . '</div>'
-            . reciboAssinatura($r) . '</div></body></html>';
+            . reciboAssinatura($r) . '</div>';
     }
     if ($tipo === 'folga') {
         $meses = ['','janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
         $dataExt = date('j') . ' de ' . $meses[(int)date('n')] . ' de ' . date('Y');
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Declaração Folga #' . $id . '</title>' . $styles . '</head><body><div class="recibo-wrap">'
+        return '<div class="recibo-wrap">'
             . '<div class="recibo-logo"><img src="' . $logoFolga . '" alt="Cassi Turismo"></div>'
             . '<div class="recibo-head"><div class="recibo-title">RECIBO Nº ' . $id . '</div><div class="recibo-meta">Declaração de venda de folga</div>' . reciboMeta($r) . '</div>'
             . '<div class="recibo-valor">R$ ' . $valor . '</div>'
             . '<div class="recibo-body">Recebi da empresa <strong>CASSI TURISMO</strong> a quantia de <strong>R$ ' . $valor . '</strong>, referente ao pagamento da diária de serviço prestado no dia da minha folga em <strong>' . $dataVenc . '</strong>, onde me disponibilizei a trabalhar por iniciativa própria.</div>'
             . '<div class="recibo-local" style="text-align:center">' . $dataExt . '</div>'
-            . reciboAssinatura($r) . '</div></body></html>';
+            . reciboAssinatura($r) . '</div>';
     }
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo #' . $id . '</title>' . $styles . '</head><body><div class="recibo-wrap">'
+    return '<div class="recibo-wrap">'
         . '<div class="recibo-logo"><img src="' . $logoPadrao . '" alt="Cassi Turismo"></div>'
         . '<div class="recibo-head"><div class="recibo-title">RECIBO Nº ' . $id . '</div>' . reciboMeta($r) . '</div>'
         . '<div class="recibo-body">Recebi da <strong>CASSI TURISMO</strong> a importância de <strong>R$ ' . $valor . '</strong>, referente a ' . $descricao . '.</div>'
         . '<div class="recibo-local">Salvador, ' . $dataVenc . '</div>'
-        . reciboAssinatura($r) . '</div></body></html>';
+        . reciboAssinatura($r) . '</div>';
+}
+function reciboPaginaPrint(array $r, string $tipo): string
+{
+    $id = (int)($r['id'] ?? 0);
+    return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title></title>'
+        . reciboStyles()
+        . '</head><body>'
+        . reciboPrintToolbar($id)
+        . '<div class="recibo-page"><div class="recibo-sheet">'
+        . reciboConteudo($r, $tipo)
+        . '</div></div>'
+        . reciboPrintScript()
+        . '</body></html>';
+}
+function reciboHtml(array $r, string $tipo): string
+{
+    return reciboPaginaPrint($r, $tipo);
 }
