@@ -1,303 +1,385 @@
-<?php require_once ('header.php');
+<?php
+require_once 'header.php';
+require_once __DIR__ . '/includes/flash.php';
 
-$cliente = $pdo->prepare('select * from `ct_cliente` ORDER BY `ct_cliente`.`fullname` DESC');
-$cliente->execute();
-$status = $pdo->prepare('select * from `ct_statusinvoice`');
-$status->execute();
-$totalFatura  = 0;
-$totalCredito = 0;
-$total  = 0;
-$total1 = 0;
-$minhasFaturas = $pdo->prepare(
-        "select f.id, f.dateinput, f.dateoutput, f.tarifa, f.credito, c.fullname, f.situacao, f.idcliente, f.status 
-                  from `ct_fatura` f left join `ct_cliente` c on c.id = f.idcliente order by f.id ");
-$minhasFaturas->execute();
-$contadorFaturas = $minhasFaturas->rowCount();
+// ── reference data ────────────────────────────────────────────────────────────
+$clientes = $pdo->query(
+    'SELECT id, fullname FROM ct_cliente ORDER BY fullname ASC'
+)->fetchAll(PDO::FETCH_ASSOC);
 
-if( isset( $_POST['pesquisarfatura'] ) )
-{
+$statuses = $pdo->query('SELECT id, nameinvoice FROM ct_statusinvoice')->fetchAll(PDO::FETCH_ASSOC);
+
+$faturas = $pdo->query(
+    'SELECT f.id, f.dateinput, f.dateoutput, f.tarifa, f.credito,
+            c.fullname, f.situacao, f.idcliente, f.status
+     FROM ct_fatura f
+     LEFT JOIN ct_cliente c ON c.id = f.idcliente
+     ORDER BY f.id DESC'
+)->fetchAll(PDO::FETCH_ASSOC);
+
+// ── search ────────────────────────────────────────────────────────────────────
+$searchDone  = false;
+$searchRows  = [];
+$grandTotal  = 0.0;
+$grandCredit = 0.0;
+$idcliente   = 0;
+$datainicio  = '';
+$datafinal   = '';
+$statSel     = [];
+
+if (isset($_POST['pesquisarfatura'])) {
+    $searchDone = true;
     $datainicio = $_POST['periodoinicial'];
     $datafinal  = $_POST['periodofinal'];
-    $idcliente  = $_POST['cliente'];
-    $ststus     = $_POST['status'];
+    $idcliente  = (int)$_POST['cliente'];
+    $statSel    = array_map('intval', (array)($_POST['status'] ?? []));
 
-    $_SESSION['periodoinicial'] = $_POST['periodoinicial'];
-    $_SESSION['periodofinal']   = $_POST['periodofinal'];
-    $_SESSION['cliente']        = $_POST['cliente'];
-    $_SESSION['status']         = $_POST['status'];
+    $_SESSION['periodoinicial'] = $datainicio;
+    $_SESSION['periodofinal']   = $datafinal;
+    $_SESSION['cliente']        = $idcliente;
+    $_SESSION['status']         = $statSel;
 
-    $totalFaturaADD = 0;
+    if (!empty($statSel)) {
+        $inSt = implode(',', $statSel);
+        $st = $pdo->prepare(
+            "SELECT r.id, r.pax, r.numbervoucher, r.idservico,
+                    r.valueservice AS valorP, r.qtdpax, r.qtdchild, r.idcliente
+             FROM ct_reserva r
+             WHERE r.dateinput >= ? AND r.dateinput <= ?
+               AND r.idstatusinvoice IN ($inSt)
+               AND r.idcliente = ? AND r.idstatus <> 2
+             ORDER BY r.numbervoucher"
+        );
+        $st->execute([$datainicio, $datafinal, $idcliente]);
+        $reservas = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!empty($reservas)) {
+            $resIds  = array_column($reservas, 'id');
+            $vouchers = array_unique(array_column($reservas, 'numbervoucher'));
+            $svcIds  = array_unique(array_column($reservas, 'idservico'));
+
+            // bulk: net price per service
+            $netMap = [];
+            if (!empty($svcIds)) {
+                $in = implode(',', array_map('intval', $svcIds));
+                $q  = $pdo->prepare("SELECT idservice, valuenet FROM ct_clientservice WHERE idclient = ? AND idservice IN ($in)");
+                $q->execute([$idcliente]);
+                foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $netMap[(int)$r['idservice']] = (float)$r['valuenet'];
+                }
+            }
+
+            // bulk: credits per voucher
+            $creditMap = [];
+            if (!empty($vouchers)) {
+                $ph = implode(',', array_fill(0, count($vouchers), '?'));
+                $q  = $pdo->prepare("SELECT numbervoucher, SUM(valuecredit) AS credito FROM ct_createfaturacredit WHERE numbervoucher IN ($ph) GROUP BY numbervoucher");
+                $q->execute($vouchers);
+                foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $creditMap[$r['numbervoucher']] = (float)$r['credito'];
+                }
+            }
+
+            // bulk: add-on rows
+            $addMap    = [];
+            $addNetMap = [];
+            if (!empty($resIds)) {
+                $in = implode(',', array_map('intval', $resIds));
+                $q  = $pdo->prepare(
+                    "SELECT ra.idrecently, ra.qpax, ra.qchild, ra.valueservice AS valorS,
+                            ra.idservice, r.pax, r.numbervoucher, r.idcliente
+                     FROM ct_recentlyadd ra
+                     LEFT JOIN ct_reserva r ON r.id = ra.idrecently
+                     WHERE ra.idrecently IN ($in)"
+                );
+                $q->execute();
+                $addRows = $q->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($addRows as $r) {
+                    $addMap[(int)$r['idrecently']][] = $r;
+                }
+                $addSvcIds = array_unique(array_map('intval', array_column($addRows, 'idservice')));
+                if (!empty($addSvcIds)) {
+                    $in2 = implode(',', $addSvcIds);
+                    $q   = $pdo->prepare("SELECT idservice, valuenet FROM ct_clientservice WHERE idclient = ? AND idservice IN ($in2)");
+                    $q->execute([$idcliente]);
+                    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                        $addNetMap[(int)$r['idservice']] = (float)$r['valuenet'];
+                    }
+                }
+            }
+
+            // build display rows
+            foreach ($reservas as $r) {
+                $net   = $netMap[(int)$r['idservico']] ?? 0;
+                $price = $net > 0 ? $net : (float)$r['valorP'];
+                $sub   = $price * $r['qtdpax'] + ($price / 2) * $r['qtdchild'];
+                $grandTotal  += $sub;
+                $grandCredit += $creditMap[$r['numbervoucher']] ?? 0;
+
+                $addLines = [];
+                foreach ($addMap[(int)$r['id']] ?? [] as $a) {
+                    $aNet   = $addNetMap[(int)$a['idservice']] ?? 0;
+                    $aPrice = $aNet > 0 ? $aNet : (float)$a['valorS'];
+                    $aSub   = $aPrice * $a['qpax'] + ($aPrice / 2) * $a['qchild'];
+                    $grandTotal += $aSub;
+                    $addLines[] = ['voucher' => $a['numbervoucher'], 'pax' => $a['pax'], 'subtotal' => $aSub];
+                }
+
+                $searchRows[] = [
+                    'voucher'  => $r['numbervoucher'],
+                    'pax'      => $r['pax'],
+                    'subtotal' => $sub,
+                    'adds'     => $addLines,
+                ];
+            }
+        }
+    }
 }
+
+$flash = getFlash();
 ?>
 <style>
-    .col-md-6{
-        margin-bottom: 20px;
-    }
+:root { --navy: #1e4770; --navy-lt: #2a5f96; }
+.map-wrapper { padding: 20px 20px 80px; }
+.bc-bar { padding: 0 0 16px; font-size: 13px; color: #6c757d; }
+.bc-bar a { color: var(--navy); font-weight: 600; text-decoration: none; }
+.bc-bar a:hover { text-decoration: underline; }
+.bc-bar .sep { margin: 0 6px; color: #ccc; }
+
+.ft-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 14px rgba(0,0,0,.07); overflow: hidden; margin-bottom: 24px; }
+.ft-card-hd { background: linear-gradient(135deg, var(--navy), var(--navy-lt)); color: #fff; padding: 15px 22px; display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; }
+.ft-card-hd i { font-size: 16px; opacity: .85; }
+.ft-body { padding: 22px 24px; }
+
+.ft-form-row { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+.ft-form-col { flex: 1 1 180px; min-width: 0; }
+.ft-form-col label { display: block; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+.ft-form-col select,
+.ft-form-col input { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: #1e293b; background: #f8fafc; transition: border-color .2s; }
+.ft-form-col select:focus,
+.ft-form-col input:focus  { border-color: var(--navy); outline: none; box-shadow: 0 0 0 3px rgba(30,71,112,.1); }
+
+.btn-ft-search { background: var(--navy); color: #fff; border: none; border-radius: 8px; padding: 10px 26px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: background .2s; }
+.btn-ft-search:hover { background: var(--navy-lt); }
+
+.ft-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 20px; }
+.ft-table thead tr { background: var(--navy); color: #fff; }
+.ft-table thead th { padding: 10px 14px; font-weight: 600; font-size: 13px; text-align: left; }
+.ft-table tbody tr { border-bottom: 1px solid #f1f5f9; }
+.ft-table tbody tr:hover { background: #f8fafc; }
+.ft-table tbody tr.add-row td { background: #f0f4ff; font-size: 13px; color: #475569; }
+.ft-table td { padding: 9px 14px; }
+.ft-table tfoot td { background: #f1f5f9; font-weight: 700; padding: 11px 14px; border-top: 2px solid var(--navy); }
+
+.voucher-btn { background: none; border: none; color: var(--navy); font-weight: 600; cursor: pointer; padding: 0; text-decoration: underline dotted; font-size: inherit; }
+.btn-ft-create { background: #10b981; color: #fff; border: none; border-radius: 8px; padding: 12px 24px; font-size: 15px; font-weight: 700; width: 100%; margin-top: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background .2s; }
+.btn-ft-create:hover { background: #059669; }
+
+.badge-ativo   { background: #dcfce7; color: #166534; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.badge-inativo { background: #fee2e2; color: #991b1b; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.act-btn { background: none; border: 1.5px solid var(--navy); color: var(--navy); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; transition: background .15s, color .15s; white-space: nowrap; }
+.act-btn:hover { background: var(--navy); color: #fff; }
+.act-btn-g { border-color: #10b981; color: #10b981; }
+.act-btn-g:hover { background: #10b981; color: #fff; }
 </style>
-<!-- PAGE CONTENT-->
-<div class="page-content--bgf7">
-    <!-- BREADCRUMB-->
-    <section class="au-breadcrumb2">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-12">
-                    <div class="au-breadcrumb-content">
-                        <div class="au-breadcrumb-left">
-                            <span class="au-breadcrumb-span">Você está aqui:</span>
-                            <ul class="list-unstyled list-inline au-breadcrumb__list">
-                                <li class="list-inline-item active">
-                                    <a href="./index.php">Home</a>
-                                </li>
-                                <li class="list-inline-item seprate">
-                                    <span>/</span>
-                                </li>
-                                <li class="list-inline-item">Financeiro: Fatura</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-    <div class="">
-        <div class="">
-            <div class="col-lg-12">
-              <div class="accordion" id="accordionExample">
-                <div class="card">
-                  <div class="card-header" id="headingOne">
-                    <h5 class="mb-0">
-                      <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true"
-                       aria-controls="collapseOne">
-                        Cadastar Fatura
-                      </button>
-                    </h5>
-                  </div>
 
-                  <div id="collapseOne" class="collapse show" aria-labelledby="headingOne" data-parent="#accordionExample">
-                    <div class="card-body">
-                      <h4>Informações da Fatura: </h4>
-                      <hr>
-                      <form action="" method="post">
-                          <div class="col-md-6 pull-left">
-                              <strong><label for="periodoinicial">Periodo Inicial</label></strong>
-                              <input type="date" name="periodoinicial" id="periodoinicial" class="form-control" required>
-                          </div>
-                          <div class="col-md-6 pull-right">
-                              <strong><label for="periodofinal">Periodo Final</label></strong>
-                              <input type="date" name="periodofinal" id="periodofinal" class="form-control" required>
-                          </div>
-                          <div class="col-md-6 pull-left">
-                              <strong><label for="cliente">Cliente</label></strong>
-                              <select class="form-control" name="cliente" id="cliente" required>
-                                  <?php while ( $dadosCliente = $cliente->fetch( PDO::FETCH_ASSOC ) ){ ?>
-                                      <option value="<?php echo($dadosCliente['id']); ?>" ><?php echo($dadosCliente['fullname']); ?></option>
-                                  <?php }?>
-                              </select>
-                          </div>
-                          <div class="col-md-6 pull-right">
-                              <strong><label for="status">Status</label></strong>
-                              <select class="form-control" name="status[]" multiple id="status" required>
-                                  <?php while ( $dadosStatus = $status->fetch( PDO::FETCH_ASSOC ) ){ ?>
-                                      <option value="<?php echo($dadosStatus['id']); ?>" ><?php echo($dadosStatus['nameinvoice']); ?></option>
-                                  <?php }?>
-                              </select>
-                          </div>
-                          <div class="form-group container-fluid">
-                              <button class="btn btn-primary btn-block btn-lg" name="pesquisarfatura" id="pesquisarfatura">
-                                  Pesquisar
-                              </button>
-                          </div>
-                      </form>
-                      <?php if( isset( $_POST['pesquisarfatura'] )){ ?>
-                          <table class="table table-bordered">
-                              <thead>
-                              <tr>
-                                  <th>Voucher</th>
-                                  <th>Pax</th>
-                                  <th>Total</th>
-                              </tr>
-                              </thead>
-                              <tbody>
-                                    <?php for($i = 0; $i <= count($ststus); $i++){
-                                        $buscarConferencia = $pdo->prepare(
-                                            'select r.id,r.pax, r.numbervoucher,r.idservico,r.valueservice as valorP, s.fullname, 
-                                                      r.qtdpax, r.qtdchild,r.idcliente from `ct_reserva` r left join `ct_servico` s on r.idservico = s.id 
-                                                      where r.`dateinput` >= :inicio and r.`dateinput` <= :fim and r.`idstatusinvoice` = :statuss 
-                                                      and r.`idcliente` = :cliente and r.`idstatus` <> 2 order by r.numbervoucher');
-                                        $buscarConferencia->execute( array( ":inicio" => $datainicio, ":fim" => $datafinal,
-                                            ":statuss" => $ststus[$i], ":cliente" => $idcliente ) );
-                                        $registroReserva = $buscarConferencia->fetchAll(PDO::FETCH_CLASS);
-                                        ?>
-                                        <?php foreach ($registroReserva as $item)
-                                        {
-                                            $buscaNet = $pdo->prepare("select * from `ct_clientservice` where idclient = :cliente and idservice = :se");
-                                            $buscaNet->execute(array(":cliente" => $item->idcliente, ":se" => $item->idservico));
-                                            $dados = $buscaNet->fetch(PDO::FETCH_ASSOC);
+<div class="map-wrapper">
 
-                                            if($dados['valuenet'] == 0)
-                                            {
-                                                $totalReserva = ( ($item->valorP * $item->qtdpax ) +
-                                                    ( ($item->valorP / 2) * $item->qtdchild ) ) ;
-
-                                            }else{
-                                                $totalReserva = ( ($dados['valuenet'] * $item->qtdpax ) +
-                                                    ( ($dados['valuenet'] / 2) * $item->qtdchild )  );
-                                            }
-
-                                            $total = $total + $totalReserva;
-                                            $buscaTarifaCredito = $pdo->prepare(
-                                                'SELECT SUM(valuecredit) as credito FROM `ct_createfaturacredit` where numbervoucher = :voucher');
-                                            $buscaTarifaCredito->execute( array(":voucher" => $item->numbervoucher ) );
-                                            $informacoes = $buscaTarifaCredito->fetch( PDO::FETCH_ASSOC );
-                                            $contador = $buscaTarifaCredito->rowCount();
-                                            $totalCredito = $totalCredito + $informacoes['credito'];
-
-                                            $buscarConferenciaADD = $pdo->prepare(
-                                                '
-                                                    select r.idcliente, ra.qpax, ra.qchild, ra.valueservice as valorS, r.pax, r.numbervoucher, ra.idservice
-                                                    from `ct_recentlyadd` ra left join `ct_reserva` r on r.id = ra.idrecently left join `ct_servico` s 
-                                                    on ra.idservice = s.id where ra.idrecently = :id');
-                                            $buscarConferenciaADD->execute( array( ":id" => $item->id ) );
-
-                                            $registroReservaADD = $buscarConferenciaADD->fetchAll(PDO::FETCH_CLASS);
-                                            ?>
-                                            <tr>
-                                                <td>
-                                                    <form method="post" target="_blank" action="./informacoes-reserva.php">
-                                                        <input type="hidden" name="voucher" id="voucher" value="<?php echo($item->numbervoucher); ?>" >
-                                                        <button type="submit" style="background-color: transparent; border: none;">
-                                                            <?php echo($item->numbervoucher); ?>
-                                                        </button>
-                                                    </form>
-                                                </td>
-                                                <td><?php echo($item->pax); ?></td>
-                                                <td><?php echo("R$".number_format($totalReserva, 2, ",", ".")); ?></td>
-                                            </tr>
-                                            <?php foreach ($registroReservaADD as $item2)
-                                            {
-                                                $buscaNet2 = $pdo->prepare(
-                                                    "select * from `ct_clientservice` where idclient = :cliente and idservice = :se");
-                                                $buscaNet2->execute(array(":cliente" => $item2->idcliente, ":se" => $item2->idservice));
-                                                $dados1 = $buscaNet2->fetch(PDO::FETCH_ASSOC);
-
-                                                if($dados1['valuenet'] == 0)
-                                                {
-                                                    $totalReservaAdd = ( ($item2->valorS * $item2->qpax ) +
-                                                        ( ($item2->valorS / 2) * $item2->qchild ) ) ;
-
-                                                }else{
-                                                    $totalReservaAdd = ( ($dados1['valuenet'] * $item2->qpax ) +
-                                                        ( ($dados1['valuenet'] / 2) * $item2->qchild )  );
-                                                }
-                                                $total1 = $total1 + $totalReservaAdd
-
-                                                ?>
-                                                <tr>
-                                                    <td>
-                                                        <form method="post" target="_blank" action="./informacoes-reserva.php">
-                                                            <input type="hidden" name="voucher" id="voucher" value="<?php echo($item2->numbervoucher); ?>" >
-                                                            <button type="submit" style="background-color: transparent; border: none;">
-                                                                <?php echo($item2->numbervoucher); ?>
-                                                            </button>
-                                                        </form>
-                                                    </td>
-                                                    <td><?php echo($item2->pax); ?></td>
-                                                    <td><?php echo("R$".number_format($totalReservaAdd, 2, ",", ".")); ?></td>
-                                                </tr>
-                                            <?php  }?>
-                                        <?php }?>
-                                    <?php }?>
-                              </tbody>
-                          </table>
-                          <form action="inicio-fim-fatura.php" method="post">
-                              <input type="hidden" name="idcliente" value="<?php echo($idcliente); ?>" >
-                              <input type="hidden" name="total"     value="<?php echo($total + $total1); ?>" >
-                              <input type="hidden" name="credito"     value="<?php echo($totalCredito); ?>" >
-                              <input type="hidden" name="inicio"     value="<?php echo($datainicio); ?>" >
-                              <input type="hidden" name="fim"     value="<?php echo($datafinal); ?>" >
-                              <input type="hidden" name="statusatual"     value="<?php echo($ststus); ?>" >
-                              <button style="margin-top: 20px;" type="submit" name="todosVoucher" id="todosVoucher" class="btn btn-success btn-large btn-block">
-                                Cadastrar Fatura</button>
-                          </form>
-                      <?php }?>
-                    </div>
-                  </div>
-                </div>
-                <div class="card">
-                  <div class="card-header" id="headingTwo">
-                    <h5 class="mb-0">
-                      <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapseTwo"
-                       aria-expanded="false" aria-controls="collapseTwo">
-                        Visualizar Faturas Cadastradas
-                      </button>
-                    </h5>
-                  </div>
-                  <div id="collapseTwo" class="collapse" aria-labelledby="headingTwo" data-parent="#accordionExample">
-                    <div class="card-body">
-                        <div class="table-reponsive">
-                            <table class="table table-bordered">
-                                <thead>
-                                    <tr>
-                                        <th>Nº</th>
-                                        <th>Cliente</th>
-                                        <th>Total</th>
-                                        <th>Crédito</th>
-                                        <th>De</th>
-                                        <th>Até</th>
-                                        <th>Situaçao</th>
-                                        <th>#</th>
-                                        <th>#</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                  <?php if( $contadorFaturas > 0 ){ ?>
-
-                                    <?php while( $registro = $minhasFaturas->fetch(PDO::FETCH_ASSOC) ){ ?>
-                                      <tr>
-                                          <td><?php echo( $registro['id'] ); ?></td>
-                                          <td><?php echo( $registro['fullname'] ); ?></td>
-                                          <td><?php echo("R$". number_format( $registro['tarifa'],2, ",", "." )  ); ?></td>
-                                          <td><?php echo("R$". number_format( $registro['credito'],2, ",", "." )  ); ?></td>
-                                          <td><?php echo( date("d-m-Y", strtotime( $registro['dateinput'] ) )  ); ?></td>
-                                          <td><?php echo( date("d-m-Y", strtotime( $registro['dateoutput'] ) )  ); ?></td>
-                                          <?php if( $registro['situacao'] == 1  ){ ?>
-                                              <td>Ativo</td>
-                                          <?php } else{ ?>
-                                              <td>Inativo</td>
-                                          <?php }?>
-                                         <td>
-                                            <form action="./editar-fatura.php" method="post" target="_blank" >
-                                                <input type="hidden" name="idfatura" value="<?php echo( $registro['id'] ); ?>">
-                                                <button name="editar" style="backgroud:transparent;border:none;color:black;" type="submit">Editar</button>
-                                            </form>
-                                         </td>
-                                          <td>
-                                              <form action="./relatorio/pdf-relatorio-cliente-reserva.php" method="post" target="_blank">
-                                                  <input type="hidden" name="cliente" value="<?php echo( $registro['idcliente'] ); ?>" >
-                                                  <input type="hidden" name="periodoinicial" value="<?php echo( $registro['dateinput'] ); ?>" >
-                                                  <input type="hidden" name="periodofinal" value="<?php echo( $registro['dateoutput'] ); ?>" >
-                                                  <input type="hidden" name="tarifa" value="<?php echo( $registro['tarifa'] ); ?>" >
-                                                  <input type="hidden" name="status" value="<?php echo( $registro['status'] ); ?>" >
-                                                  <button style="backgroud:transparent;border:none;color:black;" type="submit">Gerar Fatura</button>
-                                              </form>
-                                          </td>
-                                      </tr>
-                                    <?php }?>
-
-                                  <?php } else{?>
-                                    <div class="alert alert-success" role="alert">Não possível encontar faturas</div>
-                                  <?php }?>
-
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-        </div>
-
+    <div class="bc-bar">
+        <a href="./index">Home</a>
+        <span class="sep">/</span>
+        <span>Financeiro: Faturas</span>
     </div>
+
+    <?php if ($flash): ?>
+        <div class="alert alert-<?= $flash['type'] === 'success' ? 'success' : 'warning' ?> alert-dismissible fade show" role="alert">
+            <?= htmlspecialchars($flash['msg']) ?>
+            <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+        </div>
+    <?php endif ?>
+
+    <!-- ── Cadastrar Fatura ─────────────────────────────────────────────── -->
+    <div class="ft-card">
+        <div class="ft-card-hd">
+            <i class="fas fa-file-invoice-dollar"></i> Cadastrar Fatura
+        </div>
+        <div class="ft-body">
+            <form method="post" action="">
+                <div class="ft-form-row">
+                    <div class="ft-form-col">
+                        <label for="periodoinicial">Período Inicial</label>
+                        <input type="date" name="periodoinicial" id="periodoinicial"
+                               value="<?= htmlspecialchars($_SESSION['periodoinicial'] ?? '') ?>" required>
+                    </div>
+                    <div class="ft-form-col">
+                        <label for="periodofinal">Período Final</label>
+                        <input type="date" name="periodofinal" id="periodofinal"
+                               value="<?= htmlspecialchars($_SESSION['periodofinal'] ?? '') ?>" required>
+                    </div>
+                    <div class="ft-form-col" style="flex: 2 1 240px">
+                        <label for="cliente">Cliente</label>
+                        <select name="cliente" id="cliente" required>
+                            <option value="">Selecione…</option>
+                            <?php foreach ($clientes as $c): ?>
+                                <option value="<?= $c['id'] ?>"
+                                    <?= $idcliente == $c['id'] ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($c['fullname']) ?>
+                                </option>
+                            <?php endforeach ?>
+                        </select>
+                    </div>
+                    <div class="ft-form-col">
+                        <label for="status">Status <small style="font-size:10px;text-transform:none">(Ctrl+clique)</small></label>
+                        <select name="status[]" id="status" multiple required style="min-height: 90px">
+                            <?php foreach ($statuses as $s): ?>
+                                <option value="<?= $s['id'] ?>"
+                                    <?= in_array((int)$s['id'], $statSel, true) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($s['nameinvoice']) ?>
+                                </option>
+                            <?php endforeach ?>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" name="pesquisarfatura" class="btn-ft-search">
+                    <i class="fas fa-search"></i> Pesquisar Reservas
+                </button>
+            </form>
+
+            <?php if ($searchDone): ?>
+                <?php if (empty($searchRows)): ?>
+                    <div class="alert alert-warning mt-3">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Nenhuma reserva encontrada para os filtros selecionados.
+                    </div>
+                <?php else: ?>
+                    <table class="ft-table">
+                        <thead>
+                            <tr>
+                                <th>Voucher</th>
+                                <th>Pax</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($searchRows as $row): ?>
+                                <tr>
+                                    <td>
+                                        <form method="post" target="_blank" action="./informacoes-reserva.php" style="display:inline">
+                                            <input type="hidden" name="voucher" value="<?= htmlspecialchars($row['voucher']) ?>">
+                                            <button type="submit" class="voucher-btn"><?= htmlspecialchars($row['voucher']) ?></button>
+                                        </form>
+                                    </td>
+                                    <td><?= htmlspecialchars($row['pax']) ?></td>
+                                    <td>R$ <?= number_format($row['subtotal'], 2, ',', '.') ?></td>
+                                </tr>
+                                <?php foreach ($row['adds'] as $add): ?>
+                                    <tr class="add-row">
+                                        <td style="padding-left:28px">
+                                            <i class="fas fa-plus-circle mr-1" style="font-size:11px;opacity:.5"></i>
+                                            <form method="post" target="_blank" action="./informacoes-reserva.php" style="display:inline">
+                                                <input type="hidden" name="voucher" value="<?= htmlspecialchars($add['voucher']) ?>">
+                                                <button type="submit" class="voucher-btn" style="font-size:13px"><?= htmlspecialchars($add['voucher']) ?></button>
+                                            </form>
+                                        </td>
+                                        <td><?= htmlspecialchars($add['pax']) ?></td>
+                                        <td>R$ <?= number_format($add['subtotal'], 2, ',', '.') ?></td>
+                                    </tr>
+                                <?php endforeach ?>
+                            <?php endforeach ?>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2">Total da Fatura</td>
+                                <td>R$ <?= number_format($grandTotal, 2, ',', '.') ?></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    <form action="inicio-fim-fatura.php" method="post">
+                        <input type="hidden" name="idcliente"   value="<?= $idcliente ?>">
+                        <input type="hidden" name="total"       value="<?= $grandTotal ?>">
+                        <input type="hidden" name="credito"     value="<?= $grandCredit ?>">
+                        <input type="hidden" name="inicio"      value="<?= htmlspecialchars($datainicio) ?>">
+                        <input type="hidden" name="fim"         value="<?= htmlspecialchars($datafinal) ?>">
+                        <input type="hidden" name="statusatual" value="<?= htmlspecialchars(implode(',', $statSel)) ?>">
+                        <button type="submit" name="todosVoucher" class="btn-ft-create">
+                            <i class="fas fa-check-circle"></i> Cadastrar Fatura
+                        </button>
+                    </form>
+                <?php endif ?>
+            <?php endif ?>
+        </div>
+    </div>
+
+    <!-- ── Faturas Cadastradas ──────────────────────────────────────────── -->
+    <div class="ft-card">
+        <div class="ft-card-hd">
+            <i class="fas fa-list-alt"></i> Faturas Cadastradas
+            <span style="margin-left:auto;font-size:13px;font-weight:400;opacity:.8"><?= count($faturas) ?> fatura(s)</span>
+        </div>
+        <div class="ft-body">
+            <?php if (empty($faturas)): ?>
+                <div class="alert alert-info">Nenhuma fatura cadastrada.</div>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="ft-table">
+                        <thead>
+                            <tr>
+                                <th>Nº</th>
+                                <th>Cliente</th>
+                                <th>Total</th>
+                                <th>Crédito</th>
+                                <th>De</th>
+                                <th>Até</th>
+                                <th>Situação</th>
+                                <th style="width:80px"></th>
+                                <th style="width:100px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($faturas as $f): ?>
+                                <tr>
+                                    <td><strong>#<?= $f['id'] ?></strong></td>
+                                    <td><?= htmlspecialchars($f['fullname'] ?? '—') ?></td>
+                                    <td>R$ <?= number_format($f['tarifa'], 2, ',', '.') ?></td>
+                                    <td>R$ <?= number_format($f['credito'], 2, ',', '.') ?></td>
+                                    <td><?= date('d/m/Y', strtotime($f['dateinput'])) ?></td>
+                                    <td><?= date('d/m/Y', strtotime($f['dateoutput'])) ?></td>
+                                    <td>
+                                        <?php if ($f['situacao'] == 1): ?>
+                                            <span class="badge-ativo">Ativo</span>
+                                        <?php else: ?>
+                                            <span class="badge-inativo">Inativo</span>
+                                        <?php endif ?>
+                                    </td>
+                                    <td>
+                                        <form action="./editar-fatura.php" method="post" target="_blank">
+                                            <input type="hidden" name="idfatura" value="<?= $f['id'] ?>">
+                                            <button name="editar" type="submit" class="act-btn">
+                                                <i class="fas fa-edit"></i> Editar
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        <form action="./relatorio/pdf-relatorio-cliente-reserva.php" method="post" target="_blank">
+                                            <input type="hidden" name="cliente"        value="<?= $f['idcliente'] ?>">
+                                            <input type="hidden" name="periodoinicial" value="<?= htmlspecialchars($f['dateinput']) ?>">
+                                            <input type="hidden" name="periodofinal"   value="<?= htmlspecialchars($f['dateoutput']) ?>">
+                                            <input type="hidden" name="tarifa"         value="<?= $f['tarifa'] ?>">
+                                            <input type="hidden" name="status"         value="<?= $f['status'] ?>">
+                                            <button type="submit" class="act-btn act-btn-g">
+                                                <i class="fas fa-print"></i> Fatura
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif ?>
+        </div>
+    </div>
+
 </div>
-<?php require_once ('footer.php'); ?>
+<?php require_once 'footer.php'; ?>

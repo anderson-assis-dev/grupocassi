@@ -1,411 +1,344 @@
-<?php require_once ('header.php');
+<?php
+require_once 'header.php';
+require_once __DIR__ . '/includes/flash.php';
 
-if( isset( $_POST['editar'] ) )
-{
-  $idFatura      = $_POST['idfatura'];
-  $minhasFaturas = $pdo->prepare("select * from `ct_fatura` where `id` = :id ");
-  $minhasFaturas->execute( array(":id" => $idFatura) );
-  $dadosFatura   = $minhasFaturas->fetch(PDO::FETCH_ASSOC);
-
-
-}
-if( isset( $_POST['updatefatura'] ) )
-{
-  $idFatura      = $_POST['idfatura'];
-  $updateFatura  = $pdo->prepare(
-          'update `ct_fatura` set `tarifa` = :tarifa , `credito` = :credito, `dateinput` = :dateinput ,
-                      `situacao` = :situacao, `dateoutput` = :dateoutput where `id` = :id  ');
-  $updateFatura->execute(
-          array(
-                  ":tarifa"     => str_replace(",", ".", str_replace(".", "",$_POST['total'])),
-                  ":credito"    => str_replace(",", ".", str_replace(".", "", $_POST['credito'])),
-                  ":dateinput"  => $_POST['periodoinicial'],
-                  ":situacao"   => $_POST['situacao'],
-                  ":dateoutput" => $_POST['periodofinal'],
-                  ":id"         => $_POST['idfatura']
-          )
-  );
-  if( $_POST['situacao'] == 0 )
-  {
-      $updateReservas = $pdo->prepare(
-              "update `ct_reserva` set `idstatusinvoice` = 1 where `idcliente` = :cliente and `dateinput` >= :inicio and `dateinput` <= :fim ");
-      $updateReservas->execute( array(":cliente" => $_POST['idcliente'], ":inicio" => $_POST['periodoinicial'], ":fim" => $_POST['periodofinal'] ) );
-  }elseif($_POST['situacao'] == 1)
-  {
-      $updateReservas = $pdo->prepare(
-          "update `ct_reserva` set `idstatusinvoice` = :returnstatus where `idcliente` = :cliente and `dateinput` >= :inicio and `dateinput` <= :fim ");
-      $updateReservas->execute(
-              array(
-                  ":cliente"      => $_POST['idcliente'],
-                  ":inicio"       => $_POST['periodoinicial'],
-                  ":fim"          => $_POST['periodofinal'],
-                  ":returnstatus" => $_POST['status']
-              ) );
-  }
-
-  $minhasFaturas = $pdo->prepare("select * from `ct_fatura` where `id` = :id ");
-  $minhasFaturas->execute( array(":id" => $idFatura) );
-  echo("<div class='alert alert-success' role='alert'>As informações da fatura foram atualizadas</div>");
-
-
-}
-elseif (isset($_POST['inserirpagamento']))
-{
-    $idFatura       = $_POST['idfatura'];
-    $valor  = str_replace(".", "", $_POST['valorecebido']);
-    $valor1 = str_replace(",", ".", $valor);
-    $datapagamento = $_POST['datapagamento'];
-    $descricao = $_POST['descricaopagamento'];
-
-
-    $novo_pagamento = $pdo->prepare('insert into `ct_faturadesc` values (DEFAULT, :valor, :descricao, :datapagamento, :idfatura)');
-    $novo_pagamento->execute(array(":valor" => $valor1, ":descricao" => $descricao, ":datapagamento" => $datapagamento, ":idfatura" => $idFatura));
-    echo("<div class='alert alert-success' role='alert'>Crédito inserido com sucesso</div>");
-
-    $minhasFaturas = $pdo->prepare("select * from `ct_fatura` where `id` = :id ");
-    $minhasFaturas->execute( array(":id" => $idFatura) );
-    $dadosFatura   = $minhasFaturas->fetch(PDO::FETCH_ASSOC);
-
-    $minhasFaturasDescricao = $pdo->prepare("select * from `ct_faturadesc` where `id_fatura` = :id ");
-    $minhasFaturasDescricao->execute( array(":id" => $idFatura) );
-    $dadosFaturaDescricao   = $minhasFaturasDescricao->fetchAll(PDO::FETCH_CLASS);
-
-}
-elseif (isset($_POST['atualizarpagamento']))
-{
-    $idcredito       = $_POST['idcredito'];
-    $valor  = str_replace(".", "", $_POST['valorecebido']);
-    $valor1 = str_replace(",", ".", $valor);
-    $datapagamento = $_POST['datapagamento'];
-    $descricao = $_POST['descricaopagamento'];
-
-
-    $novo_pagamento = $pdo->prepare('update `ct_faturadesc` set `valor` = :valor, `descricao` = :descricao, `datapagamento` = :datapagamento where id = :id ');
-    $novo_pagamento->execute(array(":valor" => $valor1, ":descricao" => $descricao, ":datapagamento" => $datapagamento, ":id" => $idcredito));
-    echo("<div class='alert alert-success' role='alert'>Crédito atualizado com sucesso</div>");
-    $idFatura      = $_POST['idfatura'];
-    $minhasFaturas = $pdo->prepare("select * from `ct_fatura` where `id` = :id ");
-    $minhasFaturas->execute( array(":id" => $idFatura) );
-    $dadosFatura   = $minhasFaturas->fetch(PDO::FETCH_ASSOC);
-
-    $minhasFaturasDescricao = $pdo->prepare("select * from `ct_faturadesc` where `id_fatura` = :id ");
-    $minhasFaturasDescricao->execute( array(":id" => $idFatura) );
-    $dadosFaturaDescricao   = $minhasFaturasDescricao->fetchAll(PDO::FETCH_CLASS);
-
-}
-elseif (isset($_POST['excluirpagamento']))
-{
-    $idcredito       = $_POST['idcredito'];
-    $valor  = str_replace(".", "", $_POST['valorecebido']);
-    $valor1 = str_replace(",", ".", $valor);
-    $descricao = $_POST['descricaopagamento'];
-
-
-    $novo_pagamento = $pdo->prepare('delete from `ct_faturadesc` where id = :id ');
-    $novo_pagamento->execute(array( ":id" => $idcredito));
-    echo("<div class='alert alert-danger' role='alert'>Crédito removido</div>");
-    $idFatura      = $_POST['idfatura'];
-    $minhasFaturas = $pdo->prepare("select * from `ct_fatura` where `id` = :id ");
-    $minhasFaturas->execute( array(":id" => $idFatura) );
-    $dadosFatura   = $minhasFaturas->fetch(PDO::FETCH_ASSOC);
-
-    $minhasFaturasDescricao = $pdo->prepare("select * from `ct_faturadesc` where `id_fatura` = :id ");
-    $minhasFaturasDescricao->execute( array(":id" => $idFatura) );
-    $dadosFaturaDescricao   = $minhasFaturasDescricao->fetchAll(PDO::FETCH_CLASS);
-
+$idFatura = (int)($_POST['idfatura'] ?? 0);
+if (!$idFatura) {
+    header('Location: ./inicio-da-fatura');
+    exit;
 }
 
-$idFatura      = $_POST['idfatura'];
-$minhasFaturas = $pdo->prepare("select * from `ct_fatura` where `id` = :id ");
-$minhasFaturas->execute( array(":id" => $idFatura) );
-$dadosFatura   = $minhasFaturas->fetch(PDO::FETCH_ASSOC);
+$flash = null;
 
-$minhasFaturasDescricao = $pdo->prepare("select * from `ct_faturadesc` where `id_fatura` = :id ");
-$minhasFaturasDescricao->execute( array(":id" => $idFatura) );
-$dadosFaturaDescricao   = $minhasFaturasDescricao->fetchAll(PDO::FETCH_CLASS);
+if (isset($_POST['updatefatura'])) {
+    $tarifa  = (float)str_replace(',', '.', str_replace('.', '', $_POST['total']));
+    $credito = (float)str_replace(',', '.', str_replace('.', '', $_POST['credito']));
+    $pdo->prepare(
+        'UPDATE ct_fatura SET tarifa=?, credito=?, dateinput=?, situacao=?, dateoutput=? WHERE id=?'
+    )->execute([$tarifa, $credito, $_POST['periodoinicial'], (int)$_POST['situacao'], $_POST['periodofinal'], $idFatura]);
 
+    if ((int)$_POST['situacao'] === 0) {
+        $pdo->prepare(
+            'UPDATE ct_reserva SET idstatusinvoice=1 WHERE idcliente=? AND dateinput>=? AND dateinput<=?'
+        )->execute([$_POST['idcliente'], $_POST['periodoinicial'], $_POST['periodofinal']]);
+    } elseif ((int)$_POST['situacao'] === 1) {
+        $pdo->prepare(
+            'UPDATE ct_reserva SET idstatusinvoice=? WHERE idcliente=? AND dateinput>=? AND dateinput<=?'
+        )->execute([(int)$_POST['status'], $_POST['idcliente'], $_POST['periodoinicial'], $_POST['periodofinal']]);
+    }
+    $flash = ['type' => 'success', 'msg' => 'Informações da fatura atualizadas.'];
+
+} elseif (isset($_POST['inserirpagamento'])) {
+    $valor = (float)str_replace(',', '.', str_replace('.', '', $_POST['valorecebido']));
+    $pdo->prepare('INSERT INTO ct_faturadesc VALUES (DEFAULT, ?, ?, ?, ?)')->execute([
+        $valor, $_POST['descricaopagamento'], $_POST['datapagamento'], $idFatura,
+    ]);
+    $flash = ['type' => 'success', 'msg' => 'Crédito inserido com sucesso.'];
+
+} elseif (isset($_POST['atualizarpagamento'])) {
+    $valor = (float)str_replace(',', '.', str_replace('.', '', $_POST['valorecebido']));
+    $pdo->prepare(
+        'UPDATE ct_faturadesc SET valor=?, descricao=?, datapagamento=? WHERE id=?'
+    )->execute([$valor, $_POST['descricaopagamento'], $_POST['datapagamento'], (int)$_POST['idcredito']]);
+    $flash = ['type' => 'success', 'msg' => 'Crédito atualizado com sucesso.'];
+
+} elseif (isset($_POST['excluirpagamento'])) {
+    $pdo->prepare('DELETE FROM ct_faturadesc WHERE id=?')->execute([(int)$_POST['idcredito']]);
+    $flash = ['type' => 'warning', 'msg' => 'Crédito removido.'];
+}
+
+// fetch current state
+$st = $pdo->prepare('SELECT * FROM ct_fatura WHERE id=?');
+$st->execute([$idFatura]);
+$dadosFatura = $st->fetch(PDO::FETCH_ASSOC);
+
+if (!$dadosFatura) {
+    echo '<div class="alert alert-danger m-4">Fatura não encontrada.</div>';
+    require_once 'footer.php';
+    exit;
+}
+
+$st = $pdo->prepare('SELECT * FROM ct_faturadesc WHERE id_fatura=? ORDER BY datapagamento ASC');
+$st->execute([$idFatura]);
+$creditos = $st->fetchAll(PDO::FETCH_ASSOC);
+$totalCreditos = array_sum(array_column($creditos, 'valor'));
 ?>
 <style>
-  .col-lg-4,.col-lg-6,.col-lg-12{margin-bottom: 20px;}
+:root { --navy: #1e4770; --navy-lt: #2a5f96; }
+.map-wrapper { padding: 20px 20px 80px; }
+.bc-bar { padding: 0 0 16px; font-size: 13px; color: #6c757d; }
+.bc-bar a { color: var(--navy); font-weight: 600; text-decoration: none; }
+.bc-bar a:hover { text-decoration: underline; }
+.bc-bar .sep { margin: 0 6px; color: #ccc; }
+
+.ef-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 14px rgba(0,0,0,.07); overflow: hidden; margin-bottom: 24px; }
+.ef-card-hd { background: linear-gradient(135deg, var(--navy), var(--navy-lt)); color: #fff; padding: 15px 22px; display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; }
+.ef-card-hd i { font-size: 16px; opacity: .85; }
+.ef-body { padding: 22px 24px; }
+
+.ef-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.ef-grid-wide { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.ef-field label { display: block; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+.ef-field .input-group-text { background: #f1f5f9; border: 1.5px solid #e2e8f0; border-right: none; border-radius: 8px 0 0 8px; color: #64748b; }
+.ef-field .form-control { border: 1.5px solid #e2e8f0; border-radius: 0 8px 8px 0; font-size: 14px; height: 42px; background: #f8fafc; }
+.ef-field .form-control:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30,71,112,.1); outline: none; }
+.ef-field select.form-control { border-radius: 8px; }
+.ef-field input[type="date"].form-control { border-radius: 0 8px 8px 0; }
+
+.btn-ef-save  { background: var(--navy); color: #fff; border: none; border-radius: 8px; padding: 10px 28px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: background .2s; }
+.btn-ef-save:hover  { background: var(--navy-lt); }
+.btn-ef-back  { display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid var(--navy); color: var(--navy); background: none; border-radius: 8px; padding: 9px 22px; font-size: 14px; font-weight: 600; text-decoration: none; transition: background .2s, color .2s; }
+.btn-ef-back:hover  { background: var(--navy); color: #fff; text-decoration: none; }
+.btn-ef-print { display: inline-flex; align-items: center; gap: 7px; background: #0ea5e9; color: #fff; border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s; }
+.btn-ef-print:hover { background: #0284c7; }
+.btn-ef-add   { background: #10b981; color: #fff; border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: background .2s; }
+.btn-ef-add:hover   { background: #059669; }
+.btn-ef-del   { background: #ef4444; color: #fff; border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: background .2s; }
+.btn-ef-del:hover   { background: #dc2626; }
+.btn-ef-upd   { background: #f59e0b; color: #fff; border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: background .2s; }
+.btn-ef-upd:hover   { background: #d97706; }
+
+.ef-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+
+.ef-credit-item { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; background: #f8fafc; }
+.ef-credit-total { font-weight: 700; font-size: 15px; color: var(--navy); text-align: right; margin-top: 8px; }
 </style>
 
-<!-- PAGE CONTENT-->
-<div class="page-content--bgf7">
-    <!-- BREADCRUMB-->
-    <section class="au-breadcrumb2">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-12">
-                    <div class="au-breadcrumb-content">
-                        <div class="au-breadcrumb-left">
-                            <span class="au-breadcrumb-span">Você está aqui:</span>
-                            <ul class="list-unstyled list-inline au-breadcrumb__list">
-                                <li class="list-inline-item active">
-                                    <a href="./index">Home</a>
-                                </li>
-                                <li class="list-inline-item seprate">
-                                    <span>/</span>
-                                </li>
-                                <li class="list-inline-item">Editar Faura</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<div class="map-wrapper">
+
+    <div class="bc-bar">
+        <a href="./index">Home</a>
+        <span class="sep">/</span>
+        <a href="./inicio-da-fatura">Faturas</a>
+        <span class="sep">/</span>
+        <span>Editar Fatura #<?= $idFatura ?></span>
+    </div>
+
+    <?php if ($flash):
+        $flashClass = match($flash['type']) { 'success' => 'success', 'warning' => 'warning', default => 'danger' };
+    ?>
+        <div class="alert alert-<?= $flashClass ?> alert-dismissible fade show" role="alert">
+            <?= htmlspecialchars($flash['msg']) ?>
+            <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
         </div>
-    </section>
+    <?php endif ?>
 
-    <div class="">
-        <div class="">
-            <div class="col-lg-12">
-                <div class="accordion" id="accordionExample">
-                    <div class="card">
-                        <div class="card-header" id="headingOne">
-                            <h2 class="mb-0">
-                                <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
-                                    Dados da fatura
-                                </button>
-                            </h2>
-                        </div>
-
-                        <div id="collapseOne" class="collapse show" aria-labelledby="headingOne" data-parent="#accordionExample">
-                            <div class="card-body">
-                                <form action="" method="post">
-                                    <div class="col-lg-6 pull-left ">
-                                        <label for="total">Total</label>
-                                        <div class="input-group flex-nowrap">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text" id="addon-wrapping">R$</span>
-                                            </div>
-                                            <input type="text" name="total" id="total"
-                                                   value="<?php echo( number_format(str_replace("", "", str_replace(",", "",$dadosFatura['tarifa'])), 2, ",", ".") ); ?>"
-                                                   class="form-control">
-                                        </div>
-
-                                    </div>
-                                    <div class="col-lg-6 pull-right">
-                                        <label for="credito">Crédito</label>
-                                        <div class="input-group flex-nowrap">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text" id="addon-wrapping">R$</span>
-                                            </div>
-                                            <input type="text"
-                                                   value="<?php echo( number_format(str_replace("", "", str_replace(",", "",$dadosFatura['credito'])), 2, ",", ".") ); ?>"
-                                                   name="credito" id="credito" class="form-control">
-                                        </div>
-
-                                    </div>
-
-                                    <div class="col-lg-4 pull-left">
-                                        <label for="periodoinicial">Periodo Inicial</label>
-                                        <div class="input-group flex-nowrap">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text" id="addon-wrapping"><i class="fa fa-calendar"></i></span>
-                                            </div>
-                                            <input type="date" value="<?php echo( $dadosFatura['dateinput'] ); ?>" name="periodoinicial" id="periodoinicial"
-                                                   class="form-control">
-                                        </div>
-
-                                    </div>
-                                    <div class="col-lg-4 pull-left">
-                                        <label for="situacao">Situação</label>
-                                        <select name="situacao" class="form-control">
-                                            <?php if( $dadosFatura['situacao'] == 0 ){ ?>
-                                                <option selected value="0">Inativo</option>
-                                                <option value="1">Ativo</option>
-                                            <?php } else{ ?>
-                                                <option  value="0">Inativo</option>
-                                                <option selected value="1">Ativo</option>
-                                            <?php }?>
-
-                                        </select>
-                                    </div>
-                                    <div class="col-lg-4 pull-right">
-                                        <label for="periodofinal">Periodo Final</label>
-                                        <div class="input-group flex-nowrap">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text" id="addon-wrapping"><i class="fa fa-calendar"></i></span>
-                                            </div>
-                                            <input type="date" value="<?php echo( $dadosFatura['dateoutput'] ); ?>" name="periodofinal" id="periodofinal" class="form-control">
-                                        </div>
-
-                                    </div>
-
-                                    <div class="col-lg-4 pull-right">
-                                        <input type="hidden" name="idfatura" value="<?php echo( $dadosFatura['id'] ); ?>">
-                                        <input type="hidden" name="idcliente" value="<?php echo( $dadosFatura['idcliente'] ); ?>">
-                                        <input type="hidden" name="status" value="<?php echo( $dadosFatura['status'] ); ?>">
-                                        <button class="btn btn-outline-success btn-lg btn-block" type="submit" name="updatefatura">
-                                            Atualizar Fatura
-                                        </button>
-                                    </div>
-                                    <div class="col-lg-4 pull-left">
-                                        <a href="./inicio-da-fatura#collapseTwo" class="btn btn-outline-warning btn-lg btn-block">
-                                            Voltar
-                                        </a>
-                                    </div>
-
-                                </form>
-                                <div class="col-lg-4 pull-right">
-                                    <form action="./relatorio/pdf-relatorio-cliente-reserva" method="post" target="_blank">
-                                        <input type="hidden" name="idfatura" value="<?php echo( $dadosFatura['id'] ); ?>">
-                                        <input type="hidden" value="<?php echo( $dadosFatura['dateoutput'] ); ?>" name="periodofinal" id="periodofinal">
-                                        <input type="hidden" name="cliente" value="<?php echo( $dadosFatura['idcliente'] ); ?>">
-                                        <input type="hidden" value="<?php echo( $dadosFatura['dateinput'] ); ?>" name="periodoinicial" id="periodoinicial">
-                                        <input type="hidden" name="status" value="<?php echo( $dadosFatura['status'] ); ?>">
-                                        <button style="margin-top: -66px;" class="btn btn-outline-primary btn-lg btn-block" type="submit" name="gerar">
-                                            Imprimir Fatura
-                                        </button>
-
-                                    </form>
-                                </div>
+    <!-- ── Dados da Fatura ──────────────────────────────────────────────── -->
+    <div class="ef-card">
+        <div class="ef-card-hd">
+            <i class="fas fa-file-invoice"></i> Dados da Fatura
+        </div>
+        <div class="ef-body">
+            <form action="" method="post">
+                <div class="ef-grid ef-grid-wide">
+                    <div class="ef-field">
+                        <label for="total">Valor Total</label>
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text">R$</span>
                             </div>
+                            <input type="text" name="total" id="total" class="form-control"
+                                   value="<?= number_format((float)$dadosFatura['tarifa'], 2, ',', '.') ?>">
                         </div>
                     </div>
-                    <div class="card">
-                        <div class="card-header" id="headingTwo">
-                            <h2 class="mb-0">
-                                <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapseTwo"
-                                        aria-expanded="false" aria-controls="collapseTwo">
-                                    Adicionar Créditos
-                                </button>
-                            </h2>
-                        </div>
-                        <div id="collapseTwo" class="collapse" aria-labelledby="headingTwo" data-parent="#accordionExample">
-                            <div class="card-body">
-                                <form action="" method="post">
-                                    <div class="col-lg-4 pull-left ">
-                                        <label for="valorecebido">Valor Recebido</label>
-                                        <div class="input-group flex-nowrap">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text" id="addon-wrapping">R$</span>
-                                            </div>
-                                            <input type="text" name="valorecebido" id="valorecebido" onKeyPress="return(moeda(this,'.',',',event))" class="form-control">
-                                        </div>
-
-                                    </div>
-                                    <div class="col-lg-4 pull-left">
-                                        <label for="datapagamento">Data do pagamento</label>
-                                        <div class="input-group flex-nowrap">
-                                            <div class="input-group-prepend">
-                                                <span class="input-group-text" id="addon-wrapping"><i class="fa fa-calendar"></i></span>
-                                            </div>
-                                            <input type="date" name="datapagamento" id="datapagamento" class="form-control">
-                                        </div>
-                                    </div>
-                                    <div class="col-lg-4 pull-right">
-                                        <label for="descricaopagamento">Descrição do pagamento</label>
-                                        <input type="text" name="descricaopagamento" id="descricaopagamento" class="form-control">
-                                    </div>
-                                    <div class="col-lg-6 pull-left">
-                                        <input type="hidden" name="idfatura" value="<?php echo( $dadosFatura['id'] ); ?>">
-                                        <button class="btn btn-outline-success btn-lg" name="inserirpagamento" type="submit">Inserir Crédito</button>
-                                    </div>
-                                </form>
+                    <div class="ef-field">
+                        <label for="credito">Crédito</label>
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text">R$</span>
                             </div>
+                            <input type="text" name="credito" id="credito" class="form-control"
+                                   value="<?= number_format((float)$dadosFatura['credito'], 2, ',', '.') ?>">
                         </div>
                     </div>
-                    <div class="card">
-                        <div class="card-header" id="headingThree">
-                            <h2 class="mb-0">
-                                <button class="btn btn-link collapsed" type="button" data-toggle="collapse"
-                                        data-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
-                                    Créditos Adicionados
-                                </button>
-                            </h2>
+                    <div class="ef-field">
+                        <label for="periodoinicial">Período Inicial</label>
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                            </div>
+                            <input type="date" name="periodoinicial" id="periodoinicial" class="form-control"
+                                   value="<?= htmlspecialchars($dadosFatura['dateinput']) ?>">
                         </div>
-                        <div id="collapseThree" class="collapse" aria-labelledby="headingThree" data-parent="#accordionExample">
-                            <div class="card-body">
-                                <?php if( count($dadosFaturaDescricao) > 0 ){ ?>
-                                    <?php $totalcredito = 0; foreach ( $dadosFaturaDescricao as $item ){ $totalcredito += $item->valor ?>
-                                        <form action="" method="post">
-                                            <div class="col-lg-4 pull-left ">
-                                                <label for="valorecebido">Valor Recebido</label>
-                                                <div class="input-group flex-nowrap">
-                                                    <div class="input-group-prepend">
-                                                        <span class="input-group-text" id="addon-wrapping">R$</span>
-                                                    </div>
-                                                    <input type="text" value="<?php echo(number_format($item->valor, 2 ,",", ".")) ?>"
-                                                           name="valorecebido" id="valorecebido" onKeyPress="return(moeda(this,'.',',',event))" class="form-control">
-                                                </div>
-                                            </div>
-                                            <div class="col-lg-4 pull-left">
-                                                <label for="datapagamento">Data do pagamento</label>
-                                                <div class="input-group flex-nowrap">
-                                                    <div class="input-group-prepend">
-                                                        <span class="input-group-text" id="addon-wrapping"><i class="fa fa-calendar"></i></span>
-                                                    </div>
-                                                    <input type="date" value="<?php echo( $item->datapagamento ) ?>"
-                                                           name="datapagamento" id="datapagamento" class="form-control">
-                                                </div>
-                                            </div>
-                                            <div class="col-lg-4 pull-right">
-                                                <label for="descricaopagamento">Descrição do pagamento</label>
-                                                <input type="text" name="descricaopagamento" value="<?php echo($item->descricao) ?>"
-                                                       id="descricaopagamento" class="form-control">
-                                            </div>
-                                            <input type="hidden" value="<?php echo($item->id) ?>" name="idcredito">
-                                            <input type="hidden" name="idfatura" value="<?php echo( $dadosFatura['id'] ); ?>">
-
-                                            <div class="col-lg-6 pull-left">
-                                                <button class="btn btn-outline-success btn-lg" name="atualizarpagamento" type="submit">Atualizar Crédito</button>
-                                            </div>
-                                            <div class="col-lg-6 pull-right">
-                                                <button class="btn btn-outline-danger btn-lg" name="excluirpagamento" type="submit">Excluir Crédito</button>
-                                            </div>
-                                        </form>
-
-                                    <?php }?>
-                                    <p class="pull-right" style="font-weight: bold; margin-bottom: 20px;">
-                                        <?php echo("Valor total do créditos R$ ".number_format($totalcredito, 2, ",", ".")); ?></p>
-
-                                <?php } else { ?>
-                                    <div role="alert" class="alert alert-warning">Não há créditos para essa fatura.</div>
-                                <?php }?>
-                                                            </div>
+                    </div>
+                    <div class="ef-field">
+                        <label for="situacao">Situação</label>
+                        <select name="situacao" id="situacao" class="form-control">
+                            <option value="0" <?= $dadosFatura['situacao'] == 0 ? 'selected' : '' ?>>Inativo</option>
+                            <option value="1" <?= $dadosFatura['situacao'] == 1 ? 'selected' : '' ?>>Ativo</option>
+                        </select>
+                    </div>
+                    <div class="ef-field">
+                        <label for="periodofinal">Período Final</label>
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                            </div>
+                            <input type="date" name="periodofinal" id="periodofinal" class="form-control"
+                                   value="<?= htmlspecialchars($dadosFatura['dateoutput']) ?>">
                         </div>
                     </div>
                 </div>
+                <input type="hidden" name="idfatura"  value="<?= $idFatura ?>">
+                <input type="hidden" name="idcliente" value="<?= (int)$dadosFatura['idcliente'] ?>">
+                <input type="hidden" name="status"    value="<?= (int)$dadosFatura['status'] ?>">
+                <div class="ef-actions">
+                    <button type="submit" name="updatefatura" class="btn-ef-save">
+                        <i class="fas fa-save"></i> Atualizar Fatura
+                    </button>
+                    <a href="./inicio-da-fatura" class="btn-ef-back">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </a>
+                </div>
+            </form>
+
+            <div style="margin-top:16px">
+                <form action="./relatorio/pdf-relatorio-cliente-reserva.php" method="post" target="_blank" style="display:inline">
+                    <input type="hidden" name="idfatura"      value="<?= $idFatura ?>">
+                    <input type="hidden" name="cliente"       value="<?= (int)$dadosFatura['idcliente'] ?>">
+                    <input type="hidden" name="periodoinicial" value="<?= htmlspecialchars($dadosFatura['dateinput']) ?>">
+                    <input type="hidden" name="periodofinal"   value="<?= htmlspecialchars($dadosFatura['dateoutput']) ?>">
+                    <input type="hidden" name="status"         value="<?= (int)$dadosFatura['status'] ?>">
+                    <button type="submit" name="gerar" class="btn-ef-print">
+                        <i class="fas fa-print"></i> Imprimir Fatura
+                    </button>
+                </form>
             </div>
         </div>
     </div>
-    <script>
-        function moeda(a, e, r, t) {
-            let n = ""
-                , h = j = 0
-                , u = tamanho2 = 0
-                , l = ajd2 = ""
-                , o = window.Event ? t.which : t.keyCode;
-            if (13 == o || 8 == o)
-                return !0;
-            if (n = String.fromCharCode(o),
-            -1 == "0123456789".indexOf(n))
-                return !1;
-            for (u = a.value.length,
-                     h = 0; h < u && ("0" == a.value.charAt(h) || a.value.charAt(h) == r); h++)
-                ;
-            for (l = ""; h < u; h++)
-                -1 != "0123456789".indexOf(a.value.charAt(h)) && (l += a.value.charAt(h));
-            if (l += n,
-            0 == (u = l.length) && (a.value = ""),
-            1 == u && (a.value = "0" + r + "0" + l),
-            2 == u && (a.value = "0" + r + l),
-            u > 2) {
-                for (ajd2 = "",
-                         j = 0,
-                         h = u - 3; h >= 0; h--)
-                    3 == j && (ajd2 += e,
-                        j = 0),
-                        ajd2 += l.charAt(h),
-                        j++;
-                for (a.value = "",
-                         tamanho2 = ajd2.length,
-                         h = tamanho2 - 1; h >= 0; h--)
-                    a.value += ajd2.charAt(h);
-                a.value += r + l.substr(u - 2, u)
-            }
-            return !1
-        }
 
-    </script>
-<?php require_once ('footer.php'); ?>
+    <!-- ── Adicionar Crédito ────────────────────────────────────────────── -->
+    <div class="ef-card">
+        <div class="ef-card-hd">
+            <i class="fas fa-plus-circle"></i> Adicionar Crédito
+        </div>
+        <div class="ef-body">
+            <form action="" method="post">
+                <div class="ef-grid">
+                    <div class="ef-field">
+                        <label for="valorecebido">Valor Recebido</label>
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text">R$</span>
+                            </div>
+                            <input type="text" name="valorecebido" id="valorecebido" class="form-control"
+                                   onKeyPress="return moeda(this,'.',',',event)">
+                        </div>
+                    </div>
+                    <div class="ef-field">
+                        <label for="datapagamento">Data do Pagamento</label>
+                        <div class="input-group flex-nowrap">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                            </div>
+                            <input type="date" name="datapagamento" id="datapagamento" class="form-control">
+                        </div>
+                    </div>
+                    <div class="ef-field">
+                        <label for="descricaopagamento">Descrição</label>
+                        <input type="text" name="descricaopagamento" id="descricaopagamento" class="form-control" style="border-radius:8px;height:42px;border:1.5px solid #e2e8f0;font-size:14px;padding:0 12px">
+                    </div>
+                </div>
+                <input type="hidden" name="idfatura" value="<?= $idFatura ?>">
+                <button type="submit" name="inserirpagamento" class="btn-ef-add">
+                    <i class="fas fa-plus"></i> Inserir Crédito
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ── Créditos Adicionados ─────────────────────────────────────────── -->
+    <div class="ef-card">
+        <div class="ef-card-hd">
+            <i class="fas fa-money-bill-wave"></i> Créditos Adicionados
+        </div>
+        <div class="ef-body">
+            <?php if (empty($creditos)): ?>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                    Nenhum crédito registrado para esta fatura.
+                </div>
+            <?php else: ?>
+                <?php foreach ($creditos as $item): ?>
+                    <div class="ef-credit-item">
+                        <form action="" method="post">
+                            <div class="ef-grid">
+                                <div class="ef-field">
+                                    <label for="ve-<?= $item['id'] ?>">Valor Recebido</label>
+                                    <div class="input-group flex-nowrap">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text">R$</span>
+                                        </div>
+                                        <input type="text" name="valorecebido" id="ve-<?= $item['id'] ?>" class="form-control"
+                                               value="<?= number_format($item['valor'], 2, ',', '.') ?>"
+                                               onKeyPress="return moeda(this,'.',',',event)">
+                                    </div>
+                                </div>
+                                <div class="ef-field">
+                                    <label for="dp-<?= $item['id'] ?>">Data do Pagamento</label>
+                                    <div class="input-group flex-nowrap">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                                        </div>
+                                        <input type="date" name="datapagamento" id="dp-<?= $item['id'] ?>" class="form-control"
+                                               value="<?= htmlspecialchars($item['datapagamento']) ?>">
+                                    </div>
+                                </div>
+                                <div class="ef-field">
+                                    <label for="desc-<?= $item['id'] ?>">Descrição</label>
+                                    <input type="text" name="descricaopagamento" id="desc-<?= $item['id'] ?>" class="form-control"
+                                           style="border-radius:8px;height:42px;border:1.5px solid #e2e8f0;font-size:14px;padding:0 12px"
+                                           value="<?= htmlspecialchars($item['descricao']) ?>">
+                                </div>
+                            </div>
+                            <input type="hidden" name="idcredito" value="<?= $item['id'] ?>">
+                            <input type="hidden" name="idfatura"  value="<?= $idFatura ?>">
+                            <div class="ef-actions">
+                                <button type="submit" name="atualizarpagamento" class="btn-ef-upd">
+                                    <i class="fas fa-sync-alt"></i> Atualizar
+                                </button>
+                                <button type="submit" name="excluirpagamento" class="btn-ef-del"
+                                        onclick="return confirm('Confirma a exclusão deste crédito?')">
+                                    <i class="fas fa-trash"></i> Excluir
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                <?php endforeach ?>
+                <div class="ef-credit-total">
+                    Total de Créditos: R$ <?= number_format($totalCreditos, 2, ',', '.') ?>
+                </div>
+            <?php endif ?>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function moeda(a, e, r, t) {
+    var n = '', h = 0, j = 0, u = 0, tamanho2 = 0, l = '', ajd2 = '';
+    var o = window.Event ? t.which : t.keyCode;
+    if (o === 13 || o === 8) return true;
+    n = String.fromCharCode(o);
+    if ('0123456789'.indexOf(n) === -1) return false;
+    for (u = a.value.length, h = 0; h < u && (a.value.charAt(h) === '0' || a.value.charAt(h) === r); h++) {}
+    for (l = ''; h < u; h++) {
+        if ('0123456789'.indexOf(a.value.charAt(h)) !== -1) l += a.value.charAt(h);
+    }
+    l += n;
+    u = l.length;
+    if (u === 0) { a.value = ''; }
+    else if (u === 1) { a.value = '0' + r + '0' + l; }
+    else if (u === 2) { a.value = '0' + r + l; }
+    else {
+        for (ajd2 = '', j = 0, h = u - 3; h >= 0; h--) {
+            if (j === 3) { ajd2 += e; j = 0; }
+            ajd2 += l.charAt(h); j++;
+        }
+        for (a.value = '', tamanho2 = ajd2.length, h = tamanho2 - 1; h >= 0; h--) a.value += ajd2.charAt(h);
+        a.value += r + l.substr(u - 2, u);
+    }
+    return false;
+}
+</script>
+<?php require_once 'footer.php'; ?>
