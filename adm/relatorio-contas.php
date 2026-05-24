@@ -1,6 +1,7 @@
 <?php
 require_once 'header.php';
 require_once __DIR__ . '/includes/ref_cache.php';
+require_once __DIR__ . '/includes/flash.php';
 $pdo->exec("set names utf8");
 $todosCliente = refFornecedores($pdo);
 $empresas     = refEmpresasTodas($pdo);
@@ -24,6 +25,9 @@ $primeiroDiaMes = date('Y-m-01');
 .filter-grid .form-control:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30,71,112,.12); outline: none; }
 .btn-gerar { background: var(--navy); color: #fff; border: none; border-radius: 8px; padding: 11px 28px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background .2s; margin-top: 20px; }
 .btn-gerar:hover { background: var(--navy-lt); }
+.btn-email { background: #1a9e5c; color: #fff; border: none; border-radius: 8px; padding: 11px 28px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background .2s; margin-top: 20px; }
+.btn-email:hover { background: #157a47; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .info-box { background: #f0f6ff; border-left: 4px solid var(--navy); border-radius: 0 8px 8px 0; padding: 12px 16px; margin-top: 20px; font-size: 13px; color: #334155; }
 @media (max-width: 767px) { .filter-grid { grid-template-columns: 1fr; } .map-wrapper { padding: 14px 12px 40px; } }
 </style>
@@ -37,10 +41,17 @@ $primeiroDiaMes = date('Y-m-01');
         <span>Financeiro: Relatório de Contas</span>
     </div>
 
+    <?php $flash = getFlash(); if ($flash): ?>
+    <div class="alert alert-<?= htmlspecialchars($flash['type'], ENT_QUOTES, 'UTF-8') ?> alert-dismissible fade show" role="alert">
+        <?= $flash['msg'] ?>
+        <button type="button" class="close" data-dismiss="alert" aria-label="Fechar"><span aria-hidden="true">&times;</span></button>
+    </div>
+    <?php endif; ?>
+
     <div class="filter-card">
         <div class="fc-title"><i class="fas fa-file-invoice-dollar"></i> Relatório de Fluxo de Caixa</div>
 
-        <form action="./relatorio/pdf-fluxo-caixa" target="_blank" method="post">
+        <form id="form-relatorio" action="./relatorio/pdf-fluxo-caixa" target="_blank" method="post">
             <div class="filter-grid">
                 <div>
                     <label for="vencimentoinicial">Data Inicial</label>
@@ -90,16 +101,36 @@ $primeiroDiaMes = date('Y-m-01');
 
             <div class="info-box">
                 <i class="fas fa-info-circle" style="color:var(--navy);margin-right:6px;"></i>
-                O relatório abrirá em uma nova aba no formato de impressão.
+                <strong>Gerar no Navegador</strong> abre o relatório em nova aba (pode ser lento com muitos registros).
+                <strong>Enviar por E-mail</strong> processa em segundo plano e envia o PDF para
+                <strong><?= htmlspecialchars($_SESSION['email'] ?? '', ENT_QUOTES, 'UTF-8') ?></strong>.
             </div>
 
-            <button type="submit" name="buscar" class="btn-gerar">
-                <i class="fas fa-file-alt"></i> Gerar Relatório
-            </button>
+            <div class="btn-row">
+                <button type="submit" name="buscar" class="btn-gerar">
+                    <i class="fas fa-file-alt"></i> Gerar no Navegador
+                </button>
+                <button type="button" class="btn-email" onclick="enviarPorEmail()">
+                    <i class="fas fa-envelope"></i> Enviar por E-mail
+                </button>
+            </div>
         </form>
     </div>
 
 </div>
 </div>
+
+<script>
+function enviarPorEmail() {
+    var form = document.getElementById('form-relatorio');
+    var orig = form.action;
+    var origTarget = form.target;
+    form.action = './relatorio/enviar-relatorio-email';
+    form.target = '_self';
+    form.submit();
+    form.action  = orig;
+    form.target  = origTarget;
+}
+</script>
 
 <?php require_once 'footer.php'; ?>

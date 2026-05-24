@@ -119,9 +119,7 @@ ob_start();
                                         <span class="bot-line"></span>
                                     </a>
                                     <ul class="header3-sub-list list-unstyled">
-                                        <li>
-                                            <a href="./cadastro-cliente-fornecedor"><i class="fas fa-plus "></i>Novo Cliente</a>
-                                        </li>
+                                    
                                         <li>
                                             <a href="./pesquisa-cliente-fornecedor"><i class="fas fa-search"></i>Pesquisar Cliente</a>
                                         </li>
