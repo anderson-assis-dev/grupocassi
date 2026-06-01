@@ -107,3 +107,22 @@ function creditarFatura(PDO $pdo, string $voucher, float $valor): void
     $upd = $pdo->prepare('UPDATE ct_fatura SET credito = credito + :valor WHERE id = :id');
     $upd->execute([':valor' => $valor, ':id' => $numberfatura]);
 }
+
+function paxUploadAnexo(string $inputName = 'anexo'): ?string
+{
+    $file = $_FILES[$inputName] ?? null;
+    $ext  = $file ? strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) : '';
+    $valido = $file
+        && $file['error'] === UPLOAD_ERR_OK
+        && in_array($ext, ['pdf', 'jpg', 'jpeg', 'png'], true)
+        && $file['size'] <= 10 * 1024 * 1024;
+    if (!$valido) {
+        return null;
+    }
+    $uploadDir = __DIR__ . '/../uploads/transacoes/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+    $filename = 'pax_' . time() . '_' . mt_rand(1000, 9999) . '.' . $ext;
+    return move_uploaded_file($file['tmp_name'], $uploadDir . $filename) ? $filename : null;
+}

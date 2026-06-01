@@ -26,7 +26,7 @@ $horarios->execute();
 $listaHorarios = $horarios->fetchAll(PDO::FETCH_CLASS);
 
 $buscaCredito = $pdo->prepare(
-    'SELECT cfc.id, valuecredit, `name`, datacredit, valueagente, dataagente
+    'SELECT cfc.id, valuecredit, `name`, datacredit, valueagente, dataagente, cfc.anexo
      FROM `ct_createfaturacredit` cfc
      LEFT JOIN `ct_currentaccount` cc ON cfc.idaccountcurrent = cc.id
      WHERE `numbervoucher` = :voucher');

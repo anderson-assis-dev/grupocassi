@@ -1,5 +1,6 @@
 <?php
 require_once( '../.././config.php' );
+require_once( '../includes/pax_helpers.php' );
 ob_start();
 define('MPDP_PATH', 'MPDF54/');
 if( isset( $_POST['comissaoagente'] ) )
@@ -280,6 +281,19 @@ if( isset( $_POST['comissaoagente'] ) )
 
     }
 
+    // Attach uploaded comprovante to the most recently inserted commission record
+    $nomeAnexoComissao = paxUploadAnexo('anexo');
+    if ($nomeAnexoComissao !== null) {
+        $findLast = $pdo->prepare(
+            "SELECT id FROM ct_createfaturacredit WHERE numbervoucher = :v AND dataagente > '0000-00-00' ORDER BY id DESC LIMIT 1"
+        );
+        $findLast->execute([':v' => $voucher]);
+        $lastRow = $findLast->fetch(PDO::FETCH_ASSOC);
+        if ($lastRow) {
+            $pdo->prepare("UPDATE ct_createfaturacredit SET anexo = :a WHERE id = :id")
+                ->execute([':a' => $nomeAnexoComissao, ':id' => $lastRow['id']]);
+        }
+    }
 
 }
 ob_clean();

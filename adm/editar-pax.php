@@ -360,6 +360,26 @@ if( isset($_POST['deletecomissao'] ) )
     header('location: editar-pax?numbervoucher='.$_POST['voucher']);
     exit;
 }
+if (isset($_POST['uploadComissaoAnexo'])) {
+    $idComissao = (int)($_POST['idcomissao'] ?? 0);
+    $nomeAnexo  = paxUploadAnexo('anexo');
+    if ($nomeAnexo !== null && $idComissao > 0) {
+        $pdo->prepare("UPDATE ct_createfaturacredit SET anexo=:a WHERE id=:id")
+            ->execute([':a' => $nomeAnexo, ':id' => $idComissao]);
+    }
+    header('location: editar-pax?numbervoucher=' . $_POST['voucher']);
+    exit;
+}
+if (isset($_POST['uploadCreditoAnexo'])) {
+    $idCredito = (int)($_POST['idcredito'] ?? 0);
+    $nomeAnexo = paxUploadAnexo('anexo');
+    if ($nomeAnexo !== null && $idCredito > 0) {
+        $pdo->prepare("UPDATE ct_createfaturacredit SET anexo=:a WHERE id=:id")
+            ->execute([':a' => $nomeAnexo, ':id' => $idCredito]);
+    }
+    header('location: editar-pax?numbervoucher=' . $_POST['voucher']);
+    exit;
+}
 if( isset($_POST['voucherEmail'])) {
     require_once __DIR__ . '/includes/voucher_document.php';
     require_once __DIR__ . '/includes/mailer.php';
@@ -412,12 +432,13 @@ if( isset($_POST['Addcredito'] ) )
         ":tipo"        => $tipo,
         ":conta"       => $ccfp,
         ":plano"       => 10,
-        ":empresa"     => $dados_busca_empresa['idempr'],
+        ":empresa"     => $dados_busca_empresa['idempr'] ?? ($dadosGerais['idempresa'] ?? 1),
         ":statuus"     => 1,
         ":valor"       => $valordocredito,
         "idusr"        => $_POST['responsavel'],
         ":abertura"    => date("Y-m-d"),
     ]);
+    $idCaixaCredito = (int)$pdo->lastInsertId();
     marcarReservaAlterada($pdo, $voucher);
     $novoCredito = $pdo->prepare(
         "insert into ct_createfaturacredit set `numbervoucher` = :voucher, tarifa = :valor, `desccredit` = :desc, `datacredit` = :data,
@@ -431,6 +452,16 @@ if( isset($_POST['Addcredito'] ) )
         ':ccfp'    => $ccfp,
         ':resp'    => $resp,
     ]);
+    $idCreditoFatura = (int)$pdo->lastInsertId();
+    $nomeAnexoCredito = paxUploadAnexo('anexo');
+    if ($nomeAnexoCredito !== null) {
+        if ($idCaixaCredito > 0) {
+            $pdo->prepare("UPDATE ct_caixa SET anexo=:a WHERE id=:id")->execute([':a' => $nomeAnexoCredito, ':id' => $idCaixaCredito]);
+        }
+        if ($idCreditoFatura > 0) {
+            $pdo->prepare("UPDATE ct_createfaturacredit SET anexo=:a WHERE id=:id")->execute([':a' => $nomeAnexoCredito, ':id' => $idCreditoFatura]);
+        }
+    }
     $cartao = $pdo->prepare('SELECT name FROM `ct_currentaccount` where id = :id');
     $cartao->execute([":id" => $ccfp]);
     $dadosCartao = $cartao->fetch(PDO::FETCH_ASSOC);
@@ -1635,6 +1666,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                     <tr>
                                                         <th>Forma de Pagamento</th>
                                                         <th>Data Crédito</th>
+                                                        <th>Anexo</th>
                                                         <th>Valor do Crédito</th>
                                                         <th>Atualizar Valor</th>
                                                         <th>Remover Valor</th>
@@ -1660,7 +1692,27 @@ if( isset($_POST['excluirCadFatura']) ) {
             <?php } ?>
         </select>
     </td>
-                                                                    <td><?php echo( date("d-m-Y", strtotime($item->datacredit)) ); ?></td>
+                                                                    <td><?php echo date("d/m/Y", strtotime($item->datacredit)); ?></td>
+                                                                    <td>
+                                                                        <?php if (!empty($item->anexo)):
+                                                                            $cAnexoExt = strtolower(pathinfo($item->anexo, PATHINFO_EXTENSION));
+                                                                            $cAnexoUrl = '../adm/uploads/transacoes/' . rawurlencode($item->anexo);
+                                                                        ?>
+                                                                            <?php if ($cAnexoExt === 'pdf'): ?>
+                                                                                <a href="<?= htmlspecialchars($cAnexoUrl) ?>" target="_blank" class="btn btn-sm btn-outline-danger" title="Abrir PDF"><i class="fas fa-file-pdf"></i></a>
+                                                                            <?php else: ?>
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary" title="Visualizar imagem"
+                                                                                    onclick="paxAbrirAnexo('<?= htmlspecialchars($cAnexoUrl, ENT_QUOTES) ?>')">
+                                                                                    <i class="fas fa-image"></i>
+                                                                                </button>
+                                                                            <?php endif; ?>
+                                                                        <?php else: ?>
+                                                                            <button type="button" class="btn btn-sm btn-outline-secondary" title="Adicionar comprovante"
+                                                                                onclick="paxUploadCredito(<?= (int)$item->id ?>, '<?= htmlspecialchars($dadosGerais['numbervoucher'], ENT_QUOTES) ?>')">
+                                                                                <i class="fas fa-paperclip"></i>
+                                                                            </button>
+                                                                        <?php endif; ?>
+                                                                    </td>
                                                                     <td>
                                                                         <div class="input-group mb-3">
                                                                             <div class="input-group-prepend">
@@ -1697,7 +1749,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                             </div>
                                             <h4 style="margin-top: 20px;">Adicionar Crédito</h4>
                                             <?php if( !empty($_SESSION['idgerente'] ) or $_SESSION['id'] == 30 or $_SESSION['id'] == 304){ ?>
-                                                <form action="" method="post">
+                                                <form action="" method="post" enctype="multipart/form-data">
                                                     <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
                                                     <div class="col-md-3 pull-left">
                                                         <strong><label for="valordocredito">Valor do Crédito </label></strong>
@@ -1734,6 +1786,16 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                     <div class="container-fluid pull-left">
                                                         <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
                                                         <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
+                                                        <div style="margin-bottom:10px;margin-top:6px;">
+                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
+                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
+                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
+                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
+                                                            </div>
+                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
+                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
+                                                        </div>
                                                         <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
 														<br>
 														<br>
@@ -1741,7 +1803,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                     </div>
                                                 </form>
                                             <?php } else {?>
-                                                <form action="" method="post">
+                                                <form action="" method="post" enctype="multipart/form-data">
                                                     <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
                                                     <div class="col-md-6 pull-left">
                                                         <strong><label for="valordocredito">Valor do Crédito </label></strong>
@@ -1768,6 +1830,16 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                         <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
                                                         <input type="hidden" name="datacredito" id="datacredito"
                                                                class="form-control" value="<?php echo(date('Y-m-d')); ?>" >
+                                                        <div style="margin-bottom:10px;margin-top:6px;">
+                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
+                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
+                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
+                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
+                                                            </div>
+                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
+                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
+                                                        </div>
                                                         <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
                                                     </div>
                                                 </form>
@@ -1778,7 +1850,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                         <div class="col-md-12">
                                             <h4 style="margin-top: 20px;">Adicionar Crédito</h4>
                                             <?php if( !empty($_SESSION['idgerente'] ) or $_SESSION['id'] == 30  or $_SESSION['id'] == 304){ ?>
-                                                <form action="" method="post">
+                                                <form action="" method="post" enctype="multipart/form-data">
                                                     <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
                                                     <div class="col-md-3 pull-left">
                                                         <strong><label for="valordocredito">Valor do Crédito </label></strong>
@@ -1815,11 +1887,21 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                     <div class="container-fluid pull-left">
                                                         <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
                                                         <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
+                                                        <div style="margin-bottom:10px;margin-top:6px;">
+                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
+                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
+                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
+                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
+                                                            </div>
+                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
+                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
+                                                        </div>
                                                         <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
                                                     </div>
                                                 </form>
                                             <?php } else {?>
-                                                <form action="" method="post">
+                                                <form action="" method="post" enctype="multipart/form-data">
                                                     <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
                                                     <div class="col-md-6 pull-left">
                                                         <strong><label for="valordocredito">Valor do Crédito </label></strong>
@@ -1846,6 +1928,16 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                         <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
                                                         <input type="hidden" name="datacredito" id="datacredito"
                                                                class="form-control" value="<?php echo(date('Y-m-d')); ?>" >
+                                                        <div style="margin-bottom:10px;margin-top:6px;">
+                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
+                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
+                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
+                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
+                                                            </div>
+                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
+                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
+                                                        </div>
                                                         <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
 														<br>
 														<br>
@@ -1870,6 +1962,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                             <th>Serviço</th>
                                                             <th>Pago por</th>
                                                             <th>Valor</th>
+                                                            <th>Anexo</th>
                                                             <th>#</th>
                                                             <?php if($_SESSION['id'] == 1 or $_SESSION['id'] == 2 or $_SESSION['id'] == 30 ){ ?>
                                                                 <th>#</th>
@@ -1890,7 +1983,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                             $dadosPagador = $nomePagador->fetch(PDO::FETCH_ASSOC);
                                                             ?>
                                                             <tr>
-                                                                <td><?php echo( date("d-m-Y", strtotime($item->dataagente)) ); ?></td>
+                                                                <td><?php echo date("d/m/Y", strtotime($item->dataagente)); ?></td>
                                                                 <?php if($contadorservicec == 0){ ?>
                                                                     <?php foreach ($listaServicos as $items){ ?>
                                                                         <?php if($dadosGerais['serivco'] == $items->fullname ){ ?>
@@ -1911,6 +2004,26 @@ if( isset($_POST['excluirCadFatura']) ) {
 
 
                                                                 <td><?php echo($dadosPagador['firstname']); ?></td>
+                                                                <td>
+                                                                    <?php if (!empty($item->anexo)):
+                                                                        $cComExt = strtolower(pathinfo($item->anexo, PATHINFO_EXTENSION));
+                                                                        $cComUrl = '../adm/uploads/transacoes/' . rawurlencode($item->anexo);
+                                                                    ?>
+                                                                        <?php if ($cComExt === 'pdf'): ?>
+                                                                            <a href="<?= htmlspecialchars($cComUrl) ?>" target="_blank" class="btn btn-sm btn-outline-danger" title="Abrir PDF"><i class="fas fa-file-pdf"></i></a>
+                                                                        <?php else: ?>
+                                                                            <button type="button" class="btn btn-sm btn-outline-primary" title="Visualizar"
+                                                                                onclick="paxAbrirAnexo('<?= htmlspecialchars($cComUrl, ENT_QUOTES) ?>')">
+                                                                                <i class="fas fa-image"></i>
+                                                                            </button>
+                                                                        <?php endif; ?>
+                                                                    <?php else: ?>
+                                                                        <button type="button" class="btn btn-sm btn-outline-secondary" title="Adicionar anexo"
+                                                                            onclick="paxUploadComissao(<?= (int)$item->id ?>, '<?= htmlspecialchars($dadosGerais['numbervoucher'], ENT_QUOTES) ?>')">
+                                                                            <i class="fas fa-paperclip"></i>
+                                                                        </button>
+                                                                    <?php endif; ?>
+                                                                </td>
                                                                 <td>
                                                                     <div class="input-group mb-3">
                                                                         <div class="input-group-prepend">
@@ -1957,7 +2070,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                
                                                 <?php if( !empty( $_SESSION['idreservaplus']) or !empty( $_SESSION['idgerente'])
                                                     or !empty($_SESSION['idreservamanager'] ) or !empty($_SESSION['idfaturador'] ) or $_SESSION['id'] == 273 or $_SESSION['id'] == 225 ){ ?>
-                                                                  <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post">
+                                                                  <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
                                                             <div class="col-lg-4 pull-left">
                                                                 <strong><label for="nomeagente">Descrição</label></strong>
                                                                 <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
@@ -1984,6 +2097,10 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                             <div class="container-fluid">
                                                                 <input type="hidden" class="form-control" name="voucher"
                                                                        value="<?php echo($dadosGerais['numbervoucher']); ?>" >
+                                                                <div style="margin-bottom:10px;">
+                                                                    <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Comprovante <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+                                                                    <input type="file" name="anexo" accept=".pdf,.jpg,.jpeg,.png" style="font-size:13px;" onchange="paxPreviewAnexo(this,'paxComPreview_'+Date.now())">
+                                                                </div>
                                                                 <button type="submit" class="btn btn-success btn-lg" name="comissaoagente"
                                                                         id="comissaoagente"><svg><use href="#icon-check"></use></svg><span>Confirmar Pagamento</span></button>
                                                             </div>
@@ -1999,7 +2116,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                         <?php if( !empty( $_SESSION['idreservaplus']) or !empty( $_SESSION['idgerente'])
                                             or !empty($_SESSION['idreservamanager'] ) or !empty($_SESSION['idfaturador'] or $_SESSION['id'] == 36 ) ){?>
                                             <?php if ($contadorDespesa == 0){ ?>
-                                                <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post">
+                                                <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
                                                     <div class="col-lg-4 pull-left">
                                                         <strong><label for="nomeagente">Descrição</label></strong>
                                                         <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
@@ -2034,7 +2151,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                         <?php if( $items2->idservico <> 19 and $items2->idservico <> 30 and $items2->idservico <> 47 and $items2->idservico <> 48
                                                             and $items2->idservico <> 17 and $items2->idservico <> 18 and $items2->idservico <> 31 and $items2->idservico <> 53
                                                             and $items2->idservico <> 155){ ?>
-                                                            <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post">
+                                                            <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
                                                                 <div class="col-lg-4 pull-left">
                                                                     <strong><label for="nomeagente">Descrição</label></strong>
                                                                     <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
@@ -2059,6 +2176,10 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                                 <div class="container-fluid">
                                                                     <input type="hidden" class="form-control" name="voucher"
                                                                            value="<?php echo($dadosGerais['numbervoucher']); ?>" >
+                                                                    <div style="margin-bottom:10px;">
+                                                                        <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Comprovante <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+                                                                        <input type="file" name="anexo" accept=".pdf,.jpg,.jpeg,.png" style="font-size:13px;">
+                                                                    </div>
                                                                     <button type="submit" class="btn btn-success btn-lg " name="comissaoagente"
                                                                             id="comissaoagente"><svg><use href="#icon-check"></use></svg><span>Confirmar Pagamento</span></button>
                                                                 </div>
@@ -2075,7 +2196,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                                 and $items2->idservico <> 17 and $items2->idservico <> 18 and $items2->idservico <> 31
                                                                 and $items2->idservico <> 53
                                                                 and $items2->idservico <> 155){ ?>
-                                                                <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post">
+                                                                <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
                                                                     <div class="col-lg-4 pull-left">
                                                                         <strong><label for="nomeagente">Descrição</label></strong>
                                                                         <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
@@ -2505,4 +2626,69 @@ if( isset($_POST['excluirCadFatura']) ) {
 
     </script>
 
+<!-- Overlay visualizar anexo PAX (sem classe .modal para evitar auto-show do footer) -->
+<div id="overlayPaxAnexo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1055;align-items:center;justify-content:center;" onclick="if(event.target===this)paxFecharAnexo()">
+    <div style="background:#fff;border-radius:10px;max-width:840px;width:92%;max-height:90vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.28);">
+        <div style="padding:14px 18px;border-bottom:1px solid #dee2e6;display:flex;align-items:center;justify-content:space-between;">
+            <strong>Anexo</strong>
+            <button type="button" onclick="paxFecharAnexo()" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#6c757d;" aria-label="Fechar">&times;</button>
+        </div>
+        <div style="padding:16px;text-align:center;">
+            <img id="overlayPaxAnexoImg" src="" style="max-width:100%;max-height:72vh;" alt="Anexo">
+        </div>
+    </div>
+</div>
+<script>
+function paxAbrirAnexo(url) {
+    document.getElementById('overlayPaxAnexoImg').src = url;
+    document.getElementById('overlayPaxAnexo').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+function paxFecharAnexo() {
+    document.getElementById('overlayPaxAnexo').style.display = 'none';
+    document.getElementById('overlayPaxAnexoImg').src = '';
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') paxFecharAnexo(); });
+function paxPreviewAnexo(input, previewId) {
+    var el = document.getElementById(previewId);
+    if (!el) return;
+    el.innerHTML = '';
+    if (!input.files || !input.files[0]) return;
+    var file = input.files[0];
+    var ext = file.name.split('.').pop().toLowerCase();
+    if (['jpg','jpeg','png'].indexOf(ext) !== -1) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            el.innerHTML = '<img src="'+e.target.result+'" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid #dee2e6;margin-top:4px;" alt="Preview">';
+        };
+        reader.readAsDataURL(file);
+    } else if (ext === 'pdf') {
+        var mb = (file.size/1024/1024).toFixed(2);
+        el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff5f5;border:1px solid #fecaca;border-radius:6px;font-size:12px;margin-top:4px;"><i class="fas fa-file-pdf" style="color:#dc3545;"></i><span>'+file.name+' ('+mb+' MB)</span></div>';
+    }
+}
+function paxUploadComissao(idComissao, voucher) {
+    paxAjaxUpload({ idcomissao: idComissao, voucher: voucher, uploadComissaoAnexo: '1' });
+}
+function paxUploadCredito(idCredito, voucher) {
+    paxAjaxUpload({ idcredito: idCredito, voucher: voucher, uploadCreditoAnexo: '1' });
+}
+function paxAjaxUpload(fields) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.jpg,.jpeg,.png';
+    input.onchange = function() {
+        if (!this.files || !this.files[0]) return;
+        var fd = new FormData();
+        fd.append('anexo', this.files[0]);
+        for (var k in fields) fd.append(k, fields[k]);
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '');
+        xhr.onload = function() { window.location.reload(); };
+        xhr.send(fd);
+    };
+    input.click();
+}
+</script>
     <?php require_once ('footer.php'); ?>
