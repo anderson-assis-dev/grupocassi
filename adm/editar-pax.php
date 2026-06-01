@@ -1702,6 +1702,7 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                             <th>Pago por</th>
                                                             <th>Valor</th>
                                                             <th>Anexo</th>
+                                                            <th>Recibo</th>
                                                             <th>#</th>
                                                             <?php if($_SESSION['id'] == 1 or $_SESSION['id'] == 2 or $_SESSION['id'] == 30 ){ ?>
                                                                 <th>#</th>
@@ -1720,29 +1721,35 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                                     ":inn"  => date("Y-m-d", strtotime($item->dataagente))." 00:00:00",
                                                                     ":outt" => date("Y-m-d", strtotime($item->dataagente))." 23:59:59"));
                                                             $dadosPagador = $nomePagador->fetch(PDO::FETCH_ASSOC);
+                                                            $nomeServicoComissao = comissaoNomeServicoPorIndice(
+                                                                $dadosGerais,
+                                                                $registro,
+                                                                $listaServicos,
+                                                                $contadorservicec
+                                                            );
+                                                            $reciboUrl = !empty($item->idcaixa)
+                                                                ? 'relatorio/recibo-transacao.php?idtransacao=' . (int)$item->idcaixa
+                                                                : 'relatorio/pdf-relatorio-comissao-agente.php?recibo=1&id='
+                                                                . (int)$item->id . '&voucher='
+                                                                . rawurlencode($dadosGerais['numbervoucher']);
                                                             ?>
                                                             <tr>
                                                                 <td><?php echo date("d/m/Y", strtotime($item->dataagente)); ?></td>
-                                                                <?php if($contadorservicec == 0){ ?>
-                                                                    <?php foreach ($listaServicos as $items){ ?>
-                                                                        <?php if($dadosGerais['serivco'] == $items->fullname ){ ?>
-                                                                            <td><?php echo($items->fullname); ?></td>
-                                                                        <?php }?>
-                                                                    <?php }?>
-                                                                <?php } else{ ?>
-                                                                    <?php foreach ($registro as $items2){ ?>
-                                                                        <?php if( $items2->idservico <> 19 and $items2->idservico <> 30
-                                                                            and $items2->idservico <> 47 and $items2->idservico <> 48
-                                                                            and $items2->idservico <> 17 and $items2->idservico <> 18 and $items2->idservico <> 31
-                                                                            and $items2->idservico <> 53
-                                                                            and $items2->idservico <> 155){ ?>
-                                                                            <td><?php echo($items2->fullname); ?></td>
-                                                                        <?php }?>
-                                                                    <?php }?>
-                                                                <?php }?>
-
-
+                                                                <td><?= htmlspecialchars($nomeServicoComissao, ENT_QUOTES, 'UTF-8') ?></td>
                                                                 <td><?php echo($dadosPagador['firstname']); ?></td>
+                                                                <td>
+                                                                    <div class="input-group mb-3">
+                                                                        <div class="input-group-prepend">
+                                                                            <span class="input-group-text" id="basic-addon1">R$</span>
+                                                                        </div>
+                                                                        <input type="text" class="form-control"
+                                                                               value="<?php echo( number_format( $item->valueagente, 2,",",
+                                                                                   "." )  );  ?>"
+                                                                               name="valor" style="margin-right: 20px;">
+                                                                    </div>
+                                                                    <input type="hidden" name="iddespesa" value="<?php echo($item->id); ?>" >
+                                                                    <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
+                                                                </td>
                                                                 <td>
                                                                     <?php if (!empty($item->anexo)):
                                                                         $cComExt = strtolower(pathinfo($item->anexo, PATHINFO_EXTENSION));
@@ -1764,18 +1771,10 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                                     <?php endif; ?>
                                                                 </td>
                                                                 <td>
-                                                                    <div class="input-group mb-3">
-                                                                        <div class="input-group-prepend">
-                                                                            <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                        </div>
-                                                                        <input type="text" class="form-control"
-                                                                               value="<?php echo( number_format( $item->valueagente, 2,",",
-                                                                                   "." )  );  ?>"
-                                                                               name="valor" style="margin-right: 20px;">
-                                                                    </div>
-
-                                                                    <input type="hidden" name="iddespesa" value="<?php echo($item->id); ?>" >
-                                                                    <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
+                                                                    <a href="<?= htmlspecialchars($reciboUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank"
+                                                                        class="btn btn-sm btn-outline-info" title="Visualizar recibo">
+                                                                        <i class="fas fa-file-invoice"></i>
+                                                                    </a>
                                                                 </td>
                                                                 <td>
                                                                     <button style="margin-bottom: 15px;" type="submit" name="updatedes"

@@ -3,6 +3,7 @@ require_once __DIR__ . '/ref_cache.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/pax_helpers.php';
 require_once __DIR__ . '/transacao_helpers.php';
+require_once __DIR__ . '/recibo_helpers.php';
 function comissaoServicosExcluidos(): array
 {
     return [19, 30, 47, 48, 17, 18, 31, 53, 155];
@@ -161,12 +162,12 @@ function comissaoExcluir(PDO $pdo, int $idComissao): void
     }
     $pdo->prepare('DELETE FROM ct_caixa WHERE id = :id')->execute([':id' => $idCaixa]);
 }
-function comissaoRegistrarPagamento(PDO $pdo, string $voucher, float $valor, string $nomeAgente): int
+function comissaoRegistrarPagamento(PDO $pdo, string $voucher, float $valor, string $nomeAgente): array
 {
     $idComissao = comissaoInserirCredito($pdo, $voucher, $valor, true);
     $idCaixa = comissaoCriarTransacaoCaixa($pdo, $nomeAgente, $voucher, $valor);
     comissaoVincularCaixa($pdo, $idComissao, $idCaixa);
-    return $idComissao;
+    return ['idComissao' => $idComissao, 'idCaixa' => $idCaixa];
 }
 function comissaoCriarTransacaoCaixa(PDO $pdo, string $nomeAgente, string $voucher, float $valor): int
 {
@@ -283,7 +284,7 @@ function comissaoProcessarPagamento(PDO $pdo, string $nomeAgente, string $vouche
     if ($pagamentoPrincipal) {
         $dadosagt = comissaoGarantirAgente($pdo, $nomeAgente);
         comissaoVincularAgenteReserva($pdo, (int)$dadosagt['id'], $voucher);
-        comissaoRegistrarPagamento($pdo, $voucher, $valorUnitario, $nomeAgente);
+        $pagamento = comissaoRegistrarPagamento($pdo, $voucher, $valorUnitario, $nomeAgente);
         comissaoRegistrarFatura($pdo, $voucher, $nomeAgente, $valorUnitario, (int)$dadosReserva['cliente']);
         logAudit(
             $pdo,
@@ -292,10 +293,10 @@ function comissaoProcessarPagamento(PDO $pdo, string $nomeAgente, string $vouche
             . ' para o serviço ' . $nomeServicoPago
         );
         comissaoSalvarAnexo($pdo, $voucher);
-        return ['status' => 'ok', 'dadosReserva' => $dadosReserva];
+        return ['status' => 'ok', 'dadosReserva' => $dadosReserva, 'idCaixa' => $pagamento['idCaixa']];
     }
     if ($contadorAdicionais > 0 && $contadorPagamento <= $contadorAdicionais) {
-        comissaoRegistrarPagamento($pdo, $voucher, $valorUnitario, $nomeAgente);
+        $pagamento = comissaoRegistrarPagamento($pdo, $voucher, $valorUnitario, $nomeAgente);
         $dadosagt = comissaoBuscarAgente($pdo, $nomeAgente);
         $nomeAgt = $dadosagt['fullname'] ?? $nomeAgente;
         logAudit(
@@ -306,7 +307,7 @@ function comissaoProcessarPagamento(PDO $pdo, string $nomeAgente, string $vouche
         );
         comissaoRegistrarFatura($pdo, $voucher, $nomeAgente, $valorUnitario, (int)$dadosReserva['cliente']);
         comissaoSalvarAnexo($pdo, $voucher);
-        return ['status' => 'ok', 'dadosReserva' => $dadosReserva];
+        return ['status' => 'ok', 'dadosReserva' => $dadosReserva, 'idCaixa' => $pagamento['idCaixa']];
     }
     logAudit(
         $pdo,
@@ -319,45 +320,40 @@ function comissaoProcessarPagamento(PDO $pdo, string $nomeAgente, string $vouche
         'dadosPagamento' => comissaoUltimoPagamento($pdo, $voucher),
     ];
 }
-function comissaoHtmlRecibo(array $dadosReserva, string $nomeAgente, string $nomeServicoPago, float $valorUnitario): string
+function comissaoNomeServicoPorIndice(array $dadosGerais, array $registro, array $listaServicos, int $indice): string
 {
-    $voucher = htmlspecialchars($dadosReserva['numbervoucher'] ?? '', ENT_QUOTES, 'UTF-8');
-    $pax = htmlspecialchars($dadosReserva['pax'] ?? '', ENT_QUOTES, 'UTF-8');
-    $documento = htmlspecialchars($dadosReserva['documento'] ?? '', ENT_QUOTES, 'UTF-8');
-    $valor = number_format($valorUnitario, 2, ',', '.');
-    $descricao = htmlspecialchars(
-        'Pagamento de Comissão de ' . $nomeAgente . ' para o serviço ' . $nomeServicoPago,
-        ENT_QUOTES,
-        'UTF-8'
-    );
-    $usuario = htmlspecialchars($_SESSION['nome'] ?? '', ENT_QUOTES, 'UTF-8');
-    return '<html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8">'
-        . '<title>Recibo de Comissão</title><link rel="stylesheet" href="materialize.min.css"></head><body>'
-        . '<div class="container"><img id="logo" src="../.././images/logo.png"/><hr>'
-        . '<h4 align="center">Solicitação de pagamento ' . $voucher . '</h4>'
-        . '<small style="font-size:8px">Impresso em: ' . date('d-m-Y') . '</small><hr>'
-        . '<table class="highlight"><thead><tr><th>PAX</th><th>Documento</th><th>Valor</th></tr></thead>'
-        . '<tbody><tr><td>' . $pax . '</td><td>' . $documento . '</td><td>R$ ' . $valor . '</td></tr></tbody></table><hr>'
-        . '<table class="highlight"><thead><tr><th>Descrição</th><th>Valor Total</th></tr></thead>'
-        . '<tbody><tr><td>' . $descricao . '</td><td>R$ ' . $valor . '</td></tr></tbody></table><hr>'
-        . '<table class="highlight"><tbody><tr>'
-        . '<td>_______________________________________________________________________________________________</td>'
-        . '<td>_______________________________________________________________________________________________</td>'
-        . '</tr></tbody><tfoot><tr>'
-        . '<th style="text-align:center">' . $usuario . '</th>'
-        . '<th style="text-align:center">Autorizado</th>'
-        . '</tr></tfoot></table></div></body></html>';
+    $lista = comissaoListaServicos($dadosGerais, $registro, $listaServicos);
+    return $lista[$indice]['nome'] ?? '';
 }
-function comissaoHtmlJaPago(array $dadosReserva, ?array $dadosPagamento): string
+function comissaoReciboMensagem(string $titulo, string $texto): string
 {
-    $voucher = htmlspecialchars($dadosReserva['numbervoucher'] ?? '', ENT_QUOTES, 'UTF-8');
-    $agente = htmlspecialchars($dadosReserva['fullname'] ?? '', ENT_QUOTES, 'UTF-8');
-    $data = !empty($dadosPagamento['dataagente'])
-        ? date('d-m-Y', strtotime($dadosPagamento['dataagente']))
-        : date('d-m-Y');
-    return '<html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8">'
-        . '<title>Recibo de Comissão</title><link rel="stylesheet" href="materialize.min.css"></head><body>'
-        . '<div class="container"><img id="logo" src="../.././images/logo.png"/><hr>'
-        . '<h4 align="center">O pagamento da comissão já foi realizado para o voucher: '
-        . $voucher . ' em ' . $data . ' ' . $agente . '</h4></div></body></html>';
+    return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Recibo</title></head>'
+        . '<body style="font-family:sans-serif;padding:40px;text-align:center;color:#64748b">'
+        . '<h2>' . htmlspecialchars($titulo, ENT_QUOTES, 'UTF-8') . '</h2>'
+        . '<p>' . htmlspecialchars($texto, ENT_QUOTES, 'UTF-8') . '</p></body></html>';
+}
+function comissaoReciboHtml(PDO $pdo, int $idCaixa): string
+{
+    $registro = reciboCarregar($pdo, ['idtransacao' => $idCaixa]);
+    if (!$registro) {
+        return comissaoReciboMensagem('Transação não encontrada', 'Informe o ID da transação para gerar o recibo.');
+    }
+    return reciboPaginaPrint($registro, reciboTipo($registro));
+}
+function comissaoExibirRecibo(PDO $pdo, int $idComissao, string $voucher): void
+{
+    $comissao = comissaoPorId($pdo, $idComissao);
+    if (!$comissao || $comissao['numbervoucher'] !== $voucher || (float)$comissao['valueagente'] <= 0) {
+        http_response_code(404);
+        echo comissaoReciboMensagem('Comissão não encontrada', 'Verifique o voucher e tente novamente.');
+        exit;
+    }
+    $idCaixa = comissaoResolverIdCaixa($pdo, $idComissao);
+    if (!$idCaixa) {
+        http_response_code(404);
+        echo comissaoReciboMensagem('Recibo indisponível', 'Esta comissão ainda não possui transação vinculada no caixa.');
+        exit;
+    }
+    echo comissaoReciboHtml($pdo, $idCaixa);
+    exit;
 }
