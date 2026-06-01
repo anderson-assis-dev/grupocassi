@@ -3,7 +3,7 @@ function transacaoSelectSql(): string
 {
     return "SELECT c.id,c.datevencimento,c.idusr,u.firstname,u.lastname,c.datecompetencia,c.datepagamento,
         c.descricao,c.idempresa,f.fullname,f.id AS forid,tc.name AS tipo,cc.name AS conta,c.nome,
-        p.name AS plano,p.id AS planoid,s.nameinvoice AS situacao,s.id AS stid,c.valor,
+        p.name AS plano,p.id AS planoid,s.nameinvoice AS situacao,s.id AS stid,c.valor,c.anexo,
         tc.id AS tipoid,cc.id AS contaid,c.idstatus,c.idcliente,c.idtipo,c.idconta,c.idplano
         FROM ct_caixa c
         LEFT JOIN ct_fornecedor f ON f.id = c.idcliente
@@ -40,28 +40,51 @@ function transacaoStatusClass($idstatus): string
     $map = [1 => 'tx-badge--pendente', 2 => 'tx-badge--pago', 3 => 'tx-badge--cancelado'];
     return $map[(int)$idstatus] ?? 'tx-badge--default';
 }
+function transacaoUploadAnexo(int $idTransacao): ?string
+{
+    $file = $_FILES['anexo'] ?? null;
+    $ext  = $file ? strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) : '';
+    $valido = $file
+        && $file['error'] === UPLOAD_ERR_OK
+        && in_array($ext, ['pdf', 'jpg', 'jpeg', 'png'], true)
+        && $file['size'] <= 10 * 1024 * 1024;
+    if (!$valido) {
+        return null;
+    }
+    $uploadDir = __DIR__ . '/../uploads/transacoes/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+    $filename = 'tx_' . $idTransacao . '_' . time() . '.' . $ext;
+    return move_uploaded_file($file['tmp_name'], $uploadDir . $filename) ? $filename : null;
+}
 function transacaoAtualizar(PDO $pdo, array $dados): void
 {
-    $valor = str_replace('.', '', $dados['valor']);
+    $valor  = str_replace('.', '', $dados['valor']);
     $valor1 = str_replace(',', '.', $valor);
-    $st = $pdo->prepare(
-        "UPDATE ct_caixa SET datevencimento=:vencimento,datecompetencia=:competencia,datepagamento=:pagamento,
+    $sql = "UPDATE ct_caixa SET datevencimento=:vencimento,datecompetencia=:competencia,datepagamento=:pagamento,
         nome=:nome,descricao=:descricao,idcliente=:cliente,idtipo=:tipo,idconta=:conta,idplano=:plano,
-        idstatus=:statuus,valor=:valor,idempresa=:idempresa WHERE id=:id"
-    );
-    $st->execute([
-        ':vencimento' => $dados['datavencimento'],
-        ':pagamento' => $dados['datapagamento'],
-        ':nome' => $dados['nome'],
+        idstatus=:statuus,valor=:valor,idempresa=:idempresa";
+    $params = [
+        ':vencimento'  => $dados['datavencimento'],
+        ':pagamento'   => $dados['datapagamento'],
+        ':nome'        => $dados['nome'],
         ':competencia' => $dados['datacompetencia'],
-        ':descricao' => $dados['documento'],
-        ':cliente' => $dados['favorecido'],
-        ':tipo' => $dados['tipo'],
-        ':conta' => $dados['contacorrente'],
-        ':plano' => $dados['planocontas'],
-        ':statuus' => $dados['status'],
-        ':valor' => $valor1,
-        ':idempresa' => $dados['empresa'],
-        ':id' => $dados['idtransacao']
-    ]);
+        ':descricao'   => $dados['documento'],
+        ':cliente'     => $dados['favorecido'],
+        ':tipo'        => $dados['tipo'],
+        ':conta'       => $dados['contacorrente'],
+        ':plano'       => $dados['planocontas'],
+        ':statuus'     => $dados['status'],
+        ':valor'       => $valor1,
+        ':idempresa'   => $dados['empresa'],
+        ':id'          => $dados['idtransacao'],
+    ];
+    if (!empty($dados['anexo'])) {
+        $sql .= ",anexo=:anexo";
+        $params[':anexo'] = $dados['anexo'];
+    }
+    $sql .= " WHERE id=:id";
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
 }

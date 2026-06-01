@@ -2,6 +2,7 @@
 require_once 'header.php';
 require_once __DIR__ . '/includes/ref_cache.php';
 require_once __DIR__ . '/includes/flash.php';
+require_once __DIR__ . '/includes/transacao_helpers.php';
 $pdo->exec("set names utf8");
 $listaFornecedores = refFornecedores($pdo);
 $listaEmpresas = refEmpresasTodas($pdo);
@@ -19,7 +20,7 @@ $hoje = date('Y-m-d');
 $abaAtiva = 'consultar';
 function caixaSelectSql(): string
 {
-    return "SELECT c.id,c.datevencimento,c.nome,c.datecompetencia,c.datepagamento,c.descricao,
+    return "SELECT c.id,c.datevencimento,c.nome,c.datecompetencia,c.datepagamento,c.descricao,c.anexo,
         forne.fullname AS fornecedor,tc.name AS tipo,cc.name AS conta,p.name AS plano,
         s.nameinvoice AS situacao,c.valor,em.fullname AS empresa,c.idstatus
         FROM ct_caixa c
@@ -102,7 +103,12 @@ if (isset($_POST['novatransacao'])) {
         ':idusr' => $_POST['responsavel'],
         ':abertura' => $hoje
     ]);
-    header('location: editar-transacao?idtransacao=' . $pdo->lastInsertId());
+    $novoId = (int)$pdo->lastInsertId();
+    $nomeAnexo = transacaoUploadAnexo($novoId);
+    if ($nomeAnexo !== null) {
+        $pdo->prepare("UPDATE ct_caixa SET anexo=:a WHERE id=:id")->execute([':a' => $nomeAnexo, ':id' => $novoId]);
+    }
+    header('location: editar-transacao?idtransacao=' . $novoId);
     exit;
 }
 if (isset($_POST['removertransacao'])) {
@@ -214,6 +220,10 @@ function caixaStatusClass($idstatus): string
 .btn-tbl-del:hover { background: #b91c1c; color: #fff; }
 .caixa-form-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
 .caixa-form-actions .btn { min-width: 180px; }
+.btn-tbl-anexo { background: #0d6efd; color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s; display: inline-flex; align-items: center; gap: 4px; }
+.btn-tbl-anexo:hover { background: #0a58ca; color: #fff; }
+.anexo-upload-area { border: 2px dashed #dee2e6; border-radius: 10px; padding: 14px; text-align: center; cursor: pointer; transition: border-color .2s; background: #fafbfc; }
+.anexo-upload-area:hover { border-color: var(--navy); background: #f0f6ff; }
 @media (max-width: 991px) { .filter-grid { grid-template-columns: 1fr 1fr; } .kpi-row { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 575px) { .filter-grid { grid-template-columns: 1fr; } .kpi-row { grid-template-columns: 1fr; } .map-wrapper { padding: 14px 12px 80px; } .caixa-form-actions .btn { width: 100%; } }
 </style>
@@ -279,7 +289,7 @@ function caixaStatusClass($idstatus): string
     <div class="tab-content" style="margin-top:-12px;">
     <div class="tab-pane fade <?= $abaAtiva === 'nova' ? 'show active' : '' ?>" id="tabNova" role="tabpanel">
     <div class="filter-card">
-<form action="" method="post" id="formNovaTransacao">
+<form action="" method="post" id="formNovaTransacao" enctype="multipart/form-data">
 <div class="rui-section">
 <div class="rui-section-title">Datas</div>
 <div class="rui-grid-3">
@@ -384,7 +394,7 @@ if (!$mostrarUsuario) continue;
 <label for="valor">Valor da transação</label>
 <div class="input-group">
 <div class="input-group-prepend"><span class="input-group-text">R$</span></div>
-<input type="text" class="form-control" name="valor" id="valor" placeholder="0,00" required>
+<input type="text" class="form-control" name="valor" id="valor" placeholder="0,00" autocomplete="off" inputmode="numeric" required>
 </div>
 </div>
 <div class="rui-field">
@@ -397,11 +407,21 @@ if (!$mostrarUsuario) continue;
 </select>
 </div>
 </div>
+<div class="rui-field" style="margin-top:14px;">
+<label for="novaTxAnexo">Anexo <small style="color:#6c757d;font-weight:400">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
+<button type="button" class="anexo-upload-area" style="width:100%;border:2px dashed #dee2e6;" onclick="document.getElementById('novaTxAnexo').click()">
+    <i class="fas fa-paperclip" style="font-size:18px;color:#adb5bd;"></i>
+    <div style="margin-top:4px;font-size:13px;color:#6c757d;">Clique para selecionar arquivo</div>
+    <div style="font-size:11px;color:#adb5bd;margin-top:2px;">PDF, JPG, JPEG, PNG</div>
+</button>
+<input type="file" name="anexo" id="novaTxAnexo" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+<div id="novaTxAnexoPreview" style="margin-top:8px;"></div>
+</div>
 <div class="caixa-form-actions">
 <button class="btn btn-success" name="novatransacao" type="submit">
     <i class="fas fa-save"></i> Incluir transação
 </button>
-<button class="btn btn-outline-secondary" type="reset">
+<button class="btn btn-outline-secondary" type="reset" onclick="document.getElementById('novaTxAnexoPreview').innerHTML=''">
     <i class="fas fa-undo"></i> Limpar formulário
 </button>
 </div>
@@ -519,6 +539,15 @@ if (!$mostrarUsuario) continue;
                                         <i class="fas fa-print"></i> Recibo
                                     </button>
                                 </form>
+                                <?php if (!empty($item->anexo)):
+                                    $cExt = strtolower(pathinfo($item->anexo, PATHINFO_EXTENSION));
+                                    $cUrl = 'uploads/transacoes/' . rawurlencode($item->anexo);
+                                ?>
+                                <button type="button" class="btn-tbl-anexo" title="Ver anexo"
+                                    onclick="caixaAbrirAnexo('<?= caixaEsc($cUrl) ?>','<?= $cExt === 'pdf' ? 'pdf' : 'img' ?>')">
+                                    <i class="fas fa-paperclip"></i> Anexo
+                                </button>
+                                <?php endif; ?>
                                 <form action="" method="post" class="form-remover" style="margin:0">
                                     <input type="hidden" name="nometransacao" value="<?= caixaEsc($item->nome) ?>">
                                     <input type="hidden" name="idtransacao" value="<?= (int)$item->id ?>">
@@ -542,24 +571,23 @@ if (!$mostrarUsuario) continue;
 </div><!-- /page-content -->
 
 <script>
-function moeda(a,e,r,t){
-    var n="",h=0,j=0,u=0,tamanho2=0,l="",ajd2="",o=window.Event?t.which:t.keyCode;
-    if(13==o||8==o)return true;
-    if(n=String.fromCharCode(o),-1=="0123456789".indexOf(n))return false;
-    for(u=a.value.length,h=0;h<u&&("0"==a.value.charAt(h)||a.value.charAt(h)==r);h++);
-    for(l="";h<u;h++)-1!="0123456789".indexOf(a.value.charAt(h))&&(l+=a.value.charAt(h));
-    if(l+=n,0==(u=l.length)&&(a.value=""),1==u&&(a.value="0"+r+"0"+l),2==u&&(a.value="0"+r+l),u>2){
-        for(ajd2="",j=0,h=u-3;h>=0;h--)3==j&&(ajd2+=e,j=0),ajd2+=l.charAt(h),j++;
-        for(a.value="",tamanho2=ajd2.length,h=tamanho2-1;h>=0;h--)a.value+=ajd2.charAt(h);
-        a.value+=r+l.substr(u-2,u);
-    }
-    return false;
+function formatarMoedaInput(el){
+    var d=el.value.replace(/\D/g,'');
+    if(!d){el.value='';return;}
+    if(d.length>15)d=d.slice(0,15);
+    while(d.length<3)d='0'+d;
+    var dec=d.slice(-2),inteiro=d.slice(0,-2).replace(/^0+(?=\d)/,'')||'0';
+    el.value=inteiro.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
+}
+function bindMoedaInput(el,selecionarAoFocar){
+    if(!el)return;
+    el.addEventListener('focus',function(){
+        if(selecionarAoFocar&&el.value){el.select();}
+    });
+    el.addEventListener('input',function(){formatarMoedaInput(el);});
 }
 document.addEventListener('DOMContentLoaded', function () {
-    var valorInput = document.getElementById('valor');
-    if (valorInput) {
-        valorInput.addEventListener('keypress', function (e) { return moeda(this, '.', ',', e); });
-    }
+    bindMoedaInput(document.getElementById('valor'),false);
     document.querySelectorAll('.form-remover').forEach(function (form) {
         form.addEventListener('submit', function (e) {
             if (!confirm('Deseja remover esta transação? Esta ação não pode ser desfeita.')) {
@@ -602,6 +630,55 @@ document.addEventListener('DOMContentLoaded', function () {
     if (btnHoje) {
         btnHoje.addEventListener('click', function () { window.location.href = 'caixa?hoje=1'; });
     }
+    var novaTxAnexo = document.getElementById('novaTxAnexo');
+    if (novaTxAnexo) {
+        novaTxAnexo.addEventListener('change', function () {
+            txPreviewAnexo(this, document.getElementById('novaTxAnexoPreview'));
+        });
+    }
+});
+function txPreviewAnexo(input, previewEl) {
+    previewEl.innerHTML = '';
+    if (!input.files || !input.files[0]) { return; }
+    var file = input.files[0];
+    var ext  = file.name.split('.').pop().toLowerCase();
+    if (['jpg','jpeg','png'].indexOf(ext) !== -1) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            previewEl.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid #dee2e6;" alt="Preview do anexo">';
+        };
+        reader.readAsDataURL(file);
+    } else if (ext === 'pdf') {
+        var mb = (file.size / 1024 / 1024).toFixed(2);
+        previewEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff5f5;border:1px solid #fecaca;border-radius:8px;font-size:13px;"><i class="fas fa-file-pdf" style="color:#dc3545;font-size:18px;"></i><span>' + file.name + ' (' + mb + ' MB)</span></div>';
+    }
+}
+function caixaAbrirAnexo(url, tipo) {
+    if (tipo === 'pdf') {
+        window.open(url, '_blank');
+        return;
+    }
+    document.getElementById('overlayCaixaAnexoBody').innerHTML = '<img src="' + url + '" style="max-width:100%;max-height:72vh;" alt="Anexo">';
+    var overlay = document.getElementById('overlayCaixaAnexo');
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+function fecharOverlayCaixaAnexo() {
+    document.getElementById('overlayCaixaAnexo').style.display = 'none';
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { fecharOverlayCaixaAnexo(); }
 });
 </script>
+<!-- Overlay visualizar anexo (não usa classe Bootstrap .modal para evitar auto-show do footer) -->
+<div id="overlayCaixaAnexo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1055;align-items:center;justify-content:center;" onclick="if(event.target===this)fecharOverlayCaixaAnexo()" aria-modal="true" role="dialog" aria-label="Anexo da Transação">
+    <div style="background:#fff;border-radius:10px;max-width:840px;width:92%;max-height:90vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.28);">
+        <div style="padding:14px 18px;border-bottom:1px solid #dee2e6;display:flex;align-items:center;justify-content:space-between;">
+            <strong>Anexo da Transação</strong>
+            <button type="button" onclick="fecharOverlayCaixaAnexo()" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#6c757d;" aria-label="Fechar">&times;</button>
+        </div>
+        <div style="padding:16px;text-align:center;" id="overlayCaixaAnexoBody"></div>
+    </div>
+</div>
 <?php require_once 'footer.php'; ?>
