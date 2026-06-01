@@ -4,6 +4,8 @@ require_once __DIR__ . '/includes/ref_cache.php';
 require_once __DIR__ . '/includes/audit.php';
 require_once __DIR__ . '/includes/flash.php';
 require_once __DIR__ . '/includes/pax_helpers.php';
+require_once __DIR__ . '/includes/comissao_helpers.php';
+require_once __DIR__ . '/includes/credito_helpers.php';
 
 $pdo->exec("set names utf8");
 $numberVoucher = $_POST['numbervoucher']
@@ -311,15 +313,10 @@ if( isset($_POST['deleteserviceadd']) )
 }
 if( isset($_POST['updatecredit'] ) )
 {
-    $idcredit        = $_POST['idcredit'];
-    $valordocredito  = str_replace(".", "", $_POST['valor']);
-    $valor           = str_replace(",", ".", $valordocredito);
-    $idPagamento     = $_POST['pagamento'];
-
-    $updateValor = $pdo->prepare('update `ct_createfaturacredit` set `valuecredit` = :newcredit, `idaccountcurrent` = :pagamento where `id` = :id ');
-    $updateValor->execute([":newcredit" => str_replace(",", ".", str_replace(".", ".", $_POST['valor'])), ":pagamento" => $idPagamento, ":id" => $idcredit]);
-
-    marcarReservaAlterada($pdo, $_POST['voucher']);
+    $idcredit = (int)$_POST['idcredit'];
+    $valor = creditoParseValor((string)$_POST['valor']);
+    $idPagamento = (int)$_POST['pagamento'];
+    creditoAtualizar($pdo, $idcredit, (string)$_POST['voucher'], $valor, $idPagamento);
     logAudit($pdo, $_POST['voucher'], "Valor do crédito atualizado. para R$ ".$valor);
     setInvoiceStatus($pdo, $_POST['voucher']);
     setFlash('success', "Crédito atualizado no valor de R$ {$valor} para o voucher {$_POST['voucher']}");
@@ -328,10 +325,9 @@ if( isset($_POST['updatecredit'] ) )
 }
 if( isset($_POST['updatedes'] ) )
 {
-    $idDespesa = $_POST['iddespesa'];
-    $valor = str_replace(",", ".", $_POST['valor']);
-    $updateValor = $pdo->prepare('update `ct_createfaturacredit` set `valueagente` = :newcredit where `id` = :id');
-    $updateValor->execute([":newcredit" => $valor, ":id" => $idDespesa]);
+    $idDespesa = (int)$_POST['iddespesa'];
+    $valor = (float)str_replace(',', '.', str_replace('.', '', $_POST['valor']));
+    comissaoAtualizarValor($pdo, $idDespesa, $valor);
     logAudit($pdo, $_POST['voucher'], "Valor da comissão foi atualizado. para R$ ".$valor);
     setFlash('success', "Comissão atualizada para o valor de R$ {$valor} para o voucher {$_POST['voucher']}");
     header('location: editar-pax?numbervoucher='.$_POST['voucher']);
@@ -339,9 +335,7 @@ if( isset($_POST['updatedes'] ) )
 }
 if( isset($_POST['deletecredit'] ) )
 {
-    $idcredit = $_POST['idcredit'];
-    $updateValor = $pdo->prepare('delete from `ct_createfaturacredit` where `id` = :id');
-    $updateValor->execute([":id" => $idcredit]);
+    creditoExcluir($pdo, (int)$_POST['idcredit']);
     marcarReservaAlterada($pdo, $_POST['voucher']);
     logAudit($pdo, $_POST['voucher'], "Crédito removido");
     setInvoiceStatus($pdo, $_POST['voucher']);
@@ -352,9 +346,7 @@ if( isset($_POST['deletecredit'] ) )
 }
 if( isset($_POST['deletecomissao'] ) )
 {
-    $iddespesa = $_POST['iddespesa'];
-    $updateValor = $pdo->prepare('delete from `ct_createfaturacredit` where `id` = :id');
-    $updateValor->execute([":id" => $iddespesa]);
+    comissaoExcluir($pdo, (int)$_POST['iddespesa']);
     logAudit($pdo, $_POST['voucher'], "Pagamento de comissão cancelado.");
     setFlash('danger', "COMISSÃO CANCELADA PARA O VOUCHER: {$_POST['voucher']}");
     header('location: editar-pax?numbervoucher='.$_POST['voucher']);
@@ -407,67 +399,10 @@ if( isset($_POST['voucherEmail'])) {
 }
 if( isset($_POST['Addcredito'] ) )
 {
-    $voucher        = $_POST['voucher'];
-    $desc           = $_POST['desc'];
-    $datacredito    = $_POST['datacredito'];
-    $valor          = str_replace(".", "", $_POST['valordocredito']);
-    $valordocredito = str_replace(",", ".", $valor);
-    $ccfp           = $_POST['ccfp'];
-    $resp           = $_POST['responsavel'];
-    $busca_empresa = $pdo->prepare('select * from `ct_currentaccount` where id = :id');
-    $busca_empresa->execute([":id" => $ccfp]);
-    $dados_busca_empresa = $busca_empresa->fetch(PDO::FETCH_ASSOC);
-    $tipo = ($resp == 1) ? 2 : 1;
-    $novaTransacao = $pdo->prepare(
-        "insert into `ct_caixa` (`id`, `datevencimento`, `datepagamento`, `datecompetencia`, `nome` ,`descricao`, `idcliente`, `idtipo`, `idconta`,
-                     `idplano`, `idempresa` ,`idstatus`, `valor`, `idusr`, `dataabertura`) values (DEFAULT, :vencimento, :pagamento, :competencia, :nome ,:descricao,
-                      :cliente, :tipo, :conta, :plano, :empresa ,:statuus, :valor, :idusr, :abertura)");
-    $novaTransacao->execute([
-        ":vencimento"  => $datacredito,
-        ":pagamento"   => $datacredito,
-        ":competencia" => $datacredito,
-        ":nome"        => "CREDITO DO VOUCHER ".$voucher,
-        ":descricao"   => "CREDITO DO VOUCHER ".$voucher,
-        ":cliente"     => 15,
-        ":tipo"        => $tipo,
-        ":conta"       => $ccfp,
-        ":plano"       => 10,
-        ":empresa"     => $dados_busca_empresa['idempr'] ?? ($dadosGerais['idempresa'] ?? 1),
-        ":statuus"     => 1,
-        ":valor"       => $valordocredito,
-        "idusr"        => $_POST['responsavel'],
-        ":abertura"    => date("Y-m-d"),
-    ]);
-    $idCaixaCredito = (int)$pdo->lastInsertId();
-    marcarReservaAlterada($pdo, $voucher);
-    $novoCredito = $pdo->prepare(
-        "insert into ct_createfaturacredit set `numbervoucher` = :voucher, tarifa = :valor, `desccredit` = :desc, `datacredit` = :data,
-         `valuecredit` = :valor2, `valueguia` = '0.00', `valueagente` = '0.00', `idaccountcurrent` = :ccfp, `idplancount` = 1, `idusr` = :resp");
-    $novoCredito->execute([
-        ':voucher' => $voucher,
-        ':valor'   => $valordocredito,
-        ':desc'    => $desc,
-        ':data'    => $datacredito,
-        ':valor2'  => $valordocredito,
-        ':ccfp'    => $ccfp,
-        ':resp'    => $resp,
-    ]);
-    $idCreditoFatura = (int)$pdo->lastInsertId();
-    $nomeAnexoCredito = paxUploadAnexo('anexo');
-    if ($nomeAnexoCredito !== null) {
-        if ($idCaixaCredito > 0) {
-            $pdo->prepare("UPDATE ct_caixa SET anexo=:a WHERE id=:id")->execute([':a' => $nomeAnexoCredito, ':id' => $idCaixaCredito]);
-        }
-        if ($idCreditoFatura > 0) {
-            $pdo->prepare("UPDATE ct_createfaturacredit SET anexo=:a WHERE id=:id")->execute([':a' => $nomeAnexoCredito, ':id' => $idCreditoFatura]);
-        }
-    }
-    $cartao = $pdo->prepare('SELECT name FROM `ct_currentaccount` where id = :id');
-    $cartao->execute([":id" => $ccfp]);
-    $dadosCartao = $cartao->fetch(PDO::FETCH_ASSOC);
-    creditarFatura($pdo, $voucher, (float) $valordocredito);
-    logAudit($pdo, $voucher, "Crédito no valor de R$ ".$valordocredito." pago com ".$dadosCartao['name']);
-    setFlash('success', "Crédito adicionado no valor de R$ {$valordocredito} para o voucher {$voucher}");
+    $voucher = (string)$_POST['voucher'];
+    creditoAdicionar($pdo, $_POST, $dadosGerais);
+    $valor = creditoParseValor((string)$_POST['valordocredito']);
+    setFlash('success', "Crédito adicionado no valor de R$ {$valor} para o voucher {$voucher}");
     header('location: editar-pax?numbervoucher='.$voucher);
     exit;
 }
@@ -1655,8 +1590,8 @@ if( isset($_POST['excluirCadFatura']) ) {
 
                                 </div>
                                 <div class="tab-pane p-20" id="messages" role="tabpanel">
+                                    <div class="col-lg-12">
                                     <?php if( $contadorCredito > 0 ){ $total_credito_pago = 0; ?>
-                                        <div class="col-lg-12">
                                             <h4 style="margin-top: 20px;">Créditos Adicionados</h4>
                                             <hr>
 
@@ -1747,205 +1682,9 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                     </tbody>
                                                 </table>
                                             </div>
-                                            <h4 style="margin-top: 20px;">Adicionar Crédito</h4>
-                                            <?php if( !empty($_SESSION['idgerente'] ) or $_SESSION['id'] == 30 or $_SESSION['id'] == 304){ ?>
-                                                <form action="" method="post" enctype="multipart/form-data">
-                                                    <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
-                                                    <div class="col-md-3 pull-left">
-                                                        <strong><label for="valordocredito">Valor do Crédito </label></strong>
-                                                        <div class="input-group mb-3">
-                                                            <div class="input-group-prepend" style="width: 100%;">
-                                                                <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                <input type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                       name="valordocredito" id="valordocredito" class="form-control" >
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-3 pull-left">
-                                                        <strong><label for="valordocredito">Data do Pagamento </label></strong>
-                                                        <input type="date" name="datacredito" id="datacredito" class="form-control">
-                                                    </div>
-                                                    <div class="col-md-3 pull-left">
-                                                        <strong><label for="ccfp">Responsável </label></strong>
-                                                        <select class="form-control" name="responsavel" id="responsavel" required>
-                                                            <?php foreach ( $dados_buscarResponsavel_todos as $item_usuario ){ ?>
-                                                                <option value="<?php echo($item_usuario->id); ?>"><?php echo(utf8_encode($item_usuario->firstname." ".$item_usuario->lastname)); ?></option>
-                                                            <?php }?>
-                                                            <option value="0" selected> Selecione</option>
-                                                        </select>
-                                                    </div>
-<div class="col-md-3 pull-right">
-    <strong><label for="ccfp">Forma de Pagamento</label></strong>
-    <select class="form-control" name="ccfp" id="ccfp" required>
-        <?php foreach ($registroCc as $itemC) { ?>
-            <option value="<?php echo $itemC->id; ?>"><?php echo $itemC->name; ?></option>
-        <?php } ?>
-        <option value="0" selected>Selecione</option>
-    </select>
-</div>
-                                                    <div class="container-fluid pull-left">
-                                                        <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                        <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
-                                                        <div style="margin-bottom:10px;margin-top:6px;">
-                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
-                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
-                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
-                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
-                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
-                                                            </div>
-                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
-                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
-                                                        </div>
-                                                        <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
-														<br>
-														<br>
-														<br>
-                                                    </div>
-                                                </form>
-                                            <?php } else {?>
-                                                <form action="" method="post" enctype="multipart/form-data">
-                                                    <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
-                                                    <div class="col-md-6 pull-left">
-                                                        <strong><label for="valordocredito">Valor do Crédito </label></strong>
-                                                        <div class="input-group mb-3">
-                                                            <div class="input-group-prepend" style="width: 100%;">
-                                                                <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                <input type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                       name="valordocredito" id="valordocredito" class="form-control" >
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-6 pull-right">
-                                                        <strong><label for="ccfp">Forma de Pagamento</label></strong>
-                                                        <select class="form-control" name="ccfp" id="ccfp" required>
-                                                            <?php foreach ( $registroCc as $itemC ){ ?>
-                                                                <option value="<?php echo($itemC->id); ?>"><?php echo(utf8_encode($itemC->name)); ?></option>
-                                                            <?php }?>
-                                                            <option value="0" selected> Selecione</option>
-                                                        </select>
-                                                    </div>
-                                                    <div class="container-fluid pull-left">
-                                                        <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                        <input type="hidden" name="responsavel" value="<?php echo($_SESSION['id']); ?>" >
-                                                        <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
-                                                        <input type="hidden" name="datacredito" id="datacredito"
-                                                               class="form-control" value="<?php echo(date('Y-m-d')); ?>" >
-                                                        <div style="margin-bottom:10px;margin-top:6px;">
-                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
-                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
-                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
-                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
-                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
-                                                            </div>
-                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
-                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
-                                                        </div>
-                                                        <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
-                                                    </div>
-                                                </form>
-                                            <?php }?>
-                                        </div>
-                                    <?php }
-                                    else{ ?>
-                                        <div class="col-md-12">
-                                            <h4 style="margin-top: 20px;">Adicionar Crédito</h4>
-                                            <?php if( !empty($_SESSION['idgerente'] ) or $_SESSION['id'] == 30  or $_SESSION['id'] == 304){ ?>
-                                                <form action="" method="post" enctype="multipart/form-data">
-                                                    <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
-                                                    <div class="col-md-3 pull-left">
-                                                        <strong><label for="valordocredito">Valor do Crédito </label></strong>
-                                                        <div class="input-group mb-3">
-                                                            <div class="input-group-prepend" style="width: 100%;">
-                                                                <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                <input type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                       name="valordocredito" id="valordocredito" class="form-control" >
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-3 pull-left">
-                                                        <strong><label for="valordocredito">Data do Pagamento </label></strong>
-                                                        <input type="date" name="datacredito" id="datacredito" class="form-control">
-                                                    </div>
-                                                    <div class="col-md-3 pull-left">
-                                                        <strong><label for="ccfp">Responsável </label></strong>
-                                                        <select class="form-control" name="responsavel" id="responsavel" required>
-                                                            <?php foreach ( $dados_buscarResponsavel_todos as $item_usuario ){ ?>
-                                                                <option value="<?php echo($item_usuario->id); ?>"><?php echo(utf8_encode($item_usuario->firstname." ".$item_usuario->lastname)); ?></option>
-                                                            <?php }?>
-                                                            <option value="0" selected> Selecione</option>
-                                                        </select>
-                                                    </div>
-                                                    <div class="col-md-3 pull-right">
-                                                        <strong><label for="ccfp">Forma de Pagamento</label></strong>
-                                                        <select class="form-control" name="ccfp" id="ccfp" required>
-                                                            <?php foreach ( $registroCc as $itemC ){ ?>
-                                                                <option value="<?php echo($itemC->id); ?>"><?php echo(utf8_encode($itemC->name)); ?></option>
-                                                            <?php }?>
-                                                            <option value="0" selected> Selecione</option>
-                                                        </select>
-                                                    </div>
-                                                    <div class="container-fluid pull-left">
-                                                        <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                        <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
-                                                        <div style="margin-bottom:10px;margin-top:6px;">
-                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
-                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
-                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
-                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
-                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
-                                                            </div>
-                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
-                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
-                                                        </div>
-                                                        <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
-                                                    </div>
-                                                </form>
-                                            <?php } else {?>
-                                                <form action="" method="post" enctype="multipart/form-data">
-                                                    <input type="hidden" name="desc" id="desc" class="form-control" value="Crédito Pago">
-                                                    <div class="col-md-6 pull-left">
-                                                        <strong><label for="valordocredito">Valor do Crédito </label></strong>
-                                                        <div class="input-group mb-3">
-                                                            <div class="input-group-prepend" style="width: 100%;">
-                                                                <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                <input type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                       name="valordocredito" id="valordocredito" class="form-control" >
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-6 pull-right">
-                                                        <strong><label for="ccfp">Forma de Pagamento</label></strong>
-                                                        <select class="form-control" name="ccfp" id="ccfp" required>
-                                                            <?php foreach ( $registroCc as $itemC ){ ?>
-                                                                <option value="<?php echo($itemC->id); ?>"><?php echo(utf8_encode($itemC->name)); ?></option>
-                                                            <?php }?>
-                                                            <option value="0" selected> Selecione</option>
-                                                        </select>
-                                                    </div>
-                                                    <div class="container-fluid pull-left">
-                                                        <input type="hidden" name="voucher" value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                        <input type="hidden" name="responsavel" value="<?php echo($_SESSION['id']); ?>" >
-                                                        <input type="hidden" name="idcliente" value="<?php echo($dadosGerais['idcliente']); ?>" >
-                                                        <input type="hidden" name="datacredito" id="datacredito"
-                                                               class="form-control" value="<?php echo(date('Y-m-d')); ?>" >
-                                                        <div style="margin-bottom:10px;margin-top:6px;">
-                                                            <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Anexo <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
-                                                            <div style="border:2px dashed #dee2e6;border-radius:8px;padding:8px 12px;text-align:center;cursor:pointer;background:#fafbfc;" onclick="document.getElementById('paxAnexoCreditoInput').click()">
-                                                                <i class="fas fa-paperclip" style="color:#adb5bd;"></i>
-                                                                <span style="font-size:12px;color:#6c757d;margin-left:5px;">Clique para selecionar arquivo</span>
-                                                                <span style="font-size:11px;color:#adb5bd;display:block;">PDF, JPG, JPEG, PNG</span>
-                                                            </div>
-                                                            <input type="file" name="anexo" id="paxAnexoCreditoInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="paxPreviewAnexo(this,'paxAnexoCreditoPreview')">
-                                                            <div id="paxAnexoCreditoPreview" style="margin-top:6px;"></div>
-                                                        </div>
-                                                        <button type="submit" class="btn btn-success btn-lg" name="Addcredito" id="salvarfatura"><svg><use href="#icon-save"></use></svg><span>Salvar Crédito</span></button>
-														<br>
-														<br>
-                                                    </div>
-                                                </form>
-                                            <?php }?>
-                                        </div>
-                                    <?php }?>
+                                    <?php } ?>
+                                    <?php require __DIR__ . '/includes/credito_form.php'; ?>
+                                    </div>
                                 </div>
                                 <div class="tab-pane p-20" id="despesas" role="tabpanel">
                                     <?php if($contadorDespesa > 0){ $contadorservicec = 0; ?>
@@ -2067,172 +1806,15 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                     </table>
                                                 </form>
                                                 <br>
-                                               
-                                                <?php if( !empty( $_SESSION['idreservaplus']) or !empty( $_SESSION['idgerente'])
-                                                    or !empty($_SESSION['idreservamanager'] ) or !empty($_SESSION['idfaturador'] ) or $_SESSION['id'] == 273 or $_SESSION['id'] == 225 ){ ?>
-                                                                  <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
-                                                            <div class="col-lg-4 pull-left">
-                                                                <strong><label for="nomeagente">Descrição</label></strong>
-                                                                <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
-                                                            </div>
-                                                            <div class="col-lg-4 pull-left">
-                                                                <strong><label for="comissaoservico">Serviço</label></strong>
-                                                                <?php foreach ($listaServicos as $items){ ?>
-                                                                    <?php if($dadosGerais['serivco'] == $items->fullname ){ ?>
-                                                                        <input style="margin-bottom: 15px;" disabled type="text" name="comissaoservico"
-                                                                               id="comissaoservico" class="form-control" value="<?php echo($items->fullname); ?>">
-                                                                    <?php }?>
-                                                                <?php }?>
-                                                            </div>
-                                                            <div class="col-lg-4 pull-right">
-                                                                <strong><label for="valoragente">Valor</label></strong>
-                                                                <div class="input-group mb-3">
-                                                                    <div class="input-group-prepend">
-                                                                        <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                        <input required type="text" name="valoragente" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                               id="valoragente" class="form-control">
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <div class="container-fluid">
-                                                                <input type="hidden" class="form-control" name="voucher"
-                                                                       value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                                <div style="margin-bottom:10px;">
-                                                                    <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Comprovante <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
-                                                                    <input type="file" name="anexo" accept=".pdf,.jpg,.jpeg,.png" style="font-size:13px;" onchange="paxPreviewAnexo(this,'paxComPreview_'+Date.now())">
-                                                                </div>
-                                                                <button type="submit" class="btn btn-success btn-lg" name="comissaoagente"
-                                                                        id="comissaoagente"><svg><use href="#icon-check"></use></svg><span>Confirmar Pagamento</span></button>
-                                                            </div>
-                                                        </form>
-                                                        
-
-                                                <?php }?>
                                             </div>
                                         </div>
                                     <?php }
                                     else{ ?>
                                         <div class="alert alert-warning" role="alert">Não há pagamentos de comissão cadastrado</div>
-                                        <?php if( !empty( $_SESSION['idreservaplus']) or !empty( $_SESSION['idgerente'])
-                                            or !empty($_SESSION['idreservamanager'] ) or !empty($_SESSION['idfaturador'] or $_SESSION['id'] == 36 ) ){?>
-                                            <?php if ($contadorDespesa == 0){ ?>
-                                                <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
-                                                    <div class="col-lg-4 pull-left">
-                                                        <strong><label for="nomeagente">Descrição</label></strong>
-                                                        <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
-                                                    </div>
-<div class="col-lg-4 pull-left">
-    <strong><label for="comissaoservico">Serviço</label></strong>
-    <?php foreach ($listaServicos as $items) { ?>
-        <?php if ($dadosGerais['serivco'] == $items->fullname) { ?>
-            <input style="margin-bottom: 15px;" type="text" name="comissaoservico"
-                   id="comissaoservico" class="form-control" value="<?php echo (utf8_encode($items->fullname)); ?>">
-        <?php } ?>
-    <?php } ?>
-</div>
-                                                    <div class="col-lg-4 pull-right">
-                                                        <strong><label for="valoragente">Valor</label></strong>
-                                                        <div class="input-group mb-3">
-                                                            <div class="input-group-prepend">
-                                                                <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                <input required type="text" name="valoragente" id="valoragente" class="form-control">
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="container-fluid">
-                                                        <input type="hidden" class="form-control" name="voucher"
-                                                               value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                        <button type="submit" class="btn btn-success btn-lg" name="comissaoagente"
-                                                                id="comissaoagente"><svg><use href="#icon-check"></use></svg><span>Confirmar Pagamento</span></button>
-                                                    </div>
-                                                </form>
-                                                <?php if( $contador > 0 ){ ?>
-                                                    <?php foreach ($registro as $items2){ ?>
-                                                        <?php if( $items2->idservico <> 19 and $items2->idservico <> 30 and $items2->idservico <> 47 and $items2->idservico <> 48
-                                                            and $items2->idservico <> 17 and $items2->idservico <> 18 and $items2->idservico <> 31 and $items2->idservico <> 53
-                                                            and $items2->idservico <> 155){ ?>
-                                                            <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
-                                                                <div class="col-lg-4 pull-left">
-                                                                    <strong><label for="nomeagente">Descrição</label></strong>
-                                                                    <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
-
-                                                                </div>
-                                                                <div class="col-lg-4 pull-left">
-                                                                    <strong><label for="comissaoservico">Serviço</label></strong>
-                                                                    <input style="margin-bottom: 15px;"  type="text" name="comissaoservico"
-                                                                           id="comissaoservico" class="form-control" value="<?php echo($items2->fullname); ?>">
-                                                                </div>
-                                                                <div class="col-lg-4 pull-right">
-                                                                    <strong><label for="valoragente">Valor</label></strong>
-                                                                    <div class="input-group mb-3">
-                                                                        <div class="input-group-prepend">
-                                                                            <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                            <input required type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                                   name="valoragente" id="valoragente" class="form-control">
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div class="container-fluid">
-                                                                    <input type="hidden" class="form-control" name="voucher"
-                                                                           value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                                    <div style="margin-bottom:10px;">
-                                                                        <label style="font-size:12px;font-weight:700;color:#6c757d;display:block;margin-bottom:4px;">Comprovante <small style="font-weight:400;">(PDF ou imagem, opcional — máx. 10 MB)</small></label>
-                                                                        <input type="file" name="anexo" accept=".pdf,.jpg,.jpeg,.png" style="font-size:13px;">
-                                                                    </div>
-                                                                    <button type="submit" class="btn btn-success btn-lg " name="comissaoagente"
-                                                                            id="comissaoagente"><svg><use href="#icon-check"></use></svg><span>Confirmar Pagamento</span></button>
-                                                                </div>
-                                                            </form>
-                                                        <?php }?>
-                                                    <?php }?>
-                                                <?php }?>
-                                            <?php } else { ?>
-                                                <?php if($contadorDespesa <= $contador){ ?>
-                                                    <?php if( $contador > 0 ){ ?>
-                                                        <?php foreach ($registro as $items2){ ?>
-                                                            <?php if( $items2->idservico <> 19 and $items2->idservico <> 30 and $items2->idservico <> 47
-                                                                    and $items2->idservico <> 48
-                                                                and $items2->idservico <> 17 and $items2->idservico <> 18 and $items2->idservico <> 31
-                                                                and $items2->idservico <> 53
-                                                                and $items2->idservico <> 155){ ?>
-                                                                <form action="relatorio/pdf-relatorio-comissao-agente.php" target="_blank" method="post" enctype="multipart/form-data">
-                                                                    <div class="col-lg-4 pull-left">
-                                                                        <strong><label for="nomeagente">Descrição</label></strong>
-                                                                        <input style="margin-bottom: 15px;" type="text" name="nomeagente" id="nomeagente" class="form-control">
-
-                                                                    </div>
-                                                                    <div class="col-lg-4 pull-left">
-                                                                        <strong><label for="comissaoservico">Serviço</label></strong>
-                                                                        <input style="margin-bottom: 15px;"  type="text" name="comissaoservico"
-                                                                               id="comissaoservico" class="form-control" value="<?php echo($items2->fullname); ?>">
-                                                                    </div>
-                                                                    <div class="col-lg-4 pull-right">
-                                                                        <strong><label for="valoragente">Valor</label></strong>
-                                                                        <div class="input-group mb-3">
-                                                                            <div class="input-group-prepend">
-                                                                                <span class="input-group-text" id="basic-addon1">R$</span>
-                                                                                <input required type="text" onKeyPress="return(moeda(this,'.',',',event))"
-                                                                                       name="valoragente" id="valoragente" class="form-control">
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <div class="container-fluid">
-                                                                        <input type="hidden" class="form-control" name="voucher"
-                                                                               value="<?php echo($dadosGerais['numbervoucher']); ?>" >
-                                                                        <button type="submit" class="btn btn-success btn-lg " name="comissaoagente"
-                                                                                id="comissaoagente"><svg><use href="#icon-check"></use></svg><span>Confirmar Pagamento</span></button>
-                                                                    </div>
-                                                                </form>
-                                                            <?php }?>
-                                                        <?php }?>
-                                                    <?php }?>
-                                                <?php }?>
-                                            <?php }?>
-
-                                        <?php }?>
                                     <?php }?>
+                                    <?php if (comissaoExibirFormulario($dadosGerais, $registro, $listaServicos, $contadorDespesa)) {
+                                        require __DIR__ . '/includes/comissao_form.php';
+                                    } ?>
                                 </div>
                                 <div class="tab-pane p-20" id="auditoria" role="tabpanel">
                                     <?php if( $contadorAuditoria > 0  ){ ?>
