@@ -20,9 +20,16 @@ $voucher = (string)($_POST['voucher'] ?? '');
 $valorUnitario = (float)str_replace(',', '.', str_replace('.', '', (string)($_POST['valoragente'] ?? '0')));
 $nomeServicoPago = trim((string)($_POST['comissaoservico'] ?? ''));
 $resultado = comissaoProcessarPagamento($pdo, $nomeAgente, $voucher, $valorUnitario, $nomeServicoPago);
-if ($resultado['status'] === 'ok' && !empty($resultado['idCaixa'])) {
-    echo comissaoReciboHtml($pdo, (int)$resultado['idCaixa']);
-    exit;
+if ($resultado['status'] === 'ok') {
+    if (!empty($resultado['idCaixa'])) {
+        echo comissaoReciboHtml($pdo, (int)$resultado['idCaixa']);
+        exit;
+    }
+    $comissao = comissaoPorId($pdo, (int)($resultado['idComissao'] ?? 0));
+    if ($comissao) {
+        echo reciboPaginaPrint(comissaoMontarRegistroRecibo($pdo, $comissao, $voucher), 'padrao');
+        exit;
+    }
 }
 if ($resultado['status'] === 'duplicado') {
     echo comissaoReciboMensagem('Pagamento já realizado', 'A comissão informada já foi registrada para este voucher.');

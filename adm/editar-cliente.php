@@ -23,7 +23,9 @@ if (isset($_POST['clientupdate'])) {
          address=:ende, datefundation=:df, stateenrollment=:re, municipalregistration=:mr,
          idcountry=:pais, idstate=:estado, idcity=:cidade, cep=:cep, tel01=:tel01, tel02=:tel02,
          phone=:phone, email=:email, register=:embratur, periodoinicial=:inicio,
-         periodofinal=:final, limite=:limite, observacao=:obs WHERE id=:id"
+         periodofinal=:final, limite=:limite, observacao=:obs,
+         nomebanco=:banco, agencia=:agencia, numeroconta=:conta, tipoconta=:tipoconta, chavepix=:pix
+         WHERE id=:id"
     )->execute([
         ':cnpj'     => $_POST['cnpj'],           ':namef'    => strtoupper($_POST['nomefantazia']),
         ':rs'       => strtoupper($_POST['razaosocial']), ':tipo' => $_POST['tipo'],
@@ -36,6 +38,9 @@ if (isset($_POST['clientupdate'])) {
         ':embratur' => $_POST['registroembratur'], ':inicio'  => $_POST['periodoinicial'],
         ':final'    => $_POST['periodofinal'],     ':limite'  => $lim,
         ':obs'      => $_POST['observacao'],       ':id'      => $idCliente,
+        ':banco'    => $_POST['nomebanco'] ?? '',  ':agencia' => $_POST['agencia'] ?? '',
+        ':conta'    => $_POST['numeroconta'] ?? '',':tipoconta'=> $_POST['tipoconta'] ?? '',
+        ':pix'      => $_POST['chavepix'] ?? '',
     ]);
     setFlash('success', 'Dados do cliente atualizados com sucesso.');
     header($redirBase);
@@ -403,6 +408,44 @@ textarea.form-control { height: auto; resize: vertical; }
                                 <label class="fg-label" for="email">E-mail</label>
                                 <input type="email" name="email" id="email" class="form-control"
                                        value="<?= ecli($cli['email']) ?>">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-section-title"><i class="fas fa-university"></i> Dados Bancários</div>
+                        <div class="fg4">
+                            <div>
+                                <label class="fg-label" for="nomebanco">Banco</label>
+                                <input type="text" name="nomebanco" id="nomebanco" class="form-control"
+                                       value="<?= ecli($cli['nomebanco'] ?? '') ?>">
+                            </div>
+                            <div>
+                                <label class="fg-label" for="agencia">Agência</label>
+                                <input type="text" name="agencia" id="agencia" class="form-control"
+                                       value="<?= ecli($cli['agencia'] ?? '') ?>">
+                            </div>
+                            <div>
+                                <label class="fg-label" for="numeroconta">Conta</label>
+                                <input type="text" name="numeroconta" id="numeroconta" class="form-control"
+                                       value="<?= ecli($cli['numeroconta'] ?? '') ?>">
+                            </div>
+                            <div>
+                                <label class="fg-label" for="tipoconta">Tipo de Conta</label>
+                                <select name="tipoconta" id="tipoconta" class="form-control">
+                                    <option value="">—</option>
+                                    <?php foreach (['Corrente', 'Poupança'] as $tc): ?>
+                                    <option value="<?= ecli($tc) ?>" <?= ($cli['tipoconta'] ?? '') === $tc ? 'selected' : '' ?>>
+                                        <?= ecli($tc) ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="full">
+                                <label class="fg-label" for="chavepix">Chave PIX</label>
+                                <input type="text" name="chavepix" id="chavepix" class="form-control"
+                                       value="<?= ecli($cli['chavepix'] ?? '') ?>"
+                                       placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória">
                             </div>
                         </div>
                     </div>

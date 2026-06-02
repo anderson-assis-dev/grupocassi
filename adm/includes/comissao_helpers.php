@@ -20,6 +20,11 @@ function comissaoUsuarioPodePagar(): bool
         || !empty($_SESSION['idfaturador'])
         || in_array((int)($_SESSION['id'] ?? 0), [36, 225, 273], true);
 }
+function comissaoUsuarioAdmin(): bool
+{
+    return in_array((int)($_SESSION['id'] ?? 0), [1, 2, 30], true)
+        || !empty($_SESSION['idgerente']);
+}
 function comissaoListaServicos(array $dadosGerais, array $registro, array $listaServicos): array
 {
     $servicos = [];
@@ -130,13 +135,25 @@ function comissaoResolverIdCaixa(PDO $pdo, int $idComissao): ?int
     }
     $st = $pdo->prepare(
         "SELECT id FROM ct_caixa WHERE descricao LIKE :d AND idplano = 30 AND idtipo = 2
-        AND valor = :v ORDER BY id DESC LIMIT 1"
+        AND ABS(valor - :v) < 0.01 AND datepagamento = :data ORDER BY id DESC LIMIT 1"
     );
     $st->execute([
         ':d' => '%' . $row['numbervoucher'] . '%',
         ':v' => $row['valueagente'],
+        ':data' => date('Y-m-d', strtotime($row['dataagente'])),
     ]);
     $id = (int)($st->fetchColumn() ?: 0);
+    if ($id <= 0) {
+        $st2 = $pdo->prepare(
+            "SELECT id FROM ct_caixa WHERE descricao LIKE :d AND idplano = 30 AND idtipo = 2
+            AND ABS(valor - :v) < 0.01 ORDER BY id DESC LIMIT 1"
+        );
+        $st2->execute([
+            ':d' => '%' . $row['numbervoucher'] . '%',
+            ':v' => $row['valueagente'],
+        ]);
+        $id = (int)($st2->fetchColumn() ?: 0);
+    }
     if ($id > 0) {
         comissaoVincularCaixa($pdo, $idComissao, $id);
     }
@@ -293,7 +310,12 @@ function comissaoProcessarPagamento(PDO $pdo, string $nomeAgente, string $vouche
             . ' para o serviço ' . $nomeServicoPago
         );
         comissaoSalvarAnexo($pdo, $voucher);
-        return ['status' => 'ok', 'dadosReserva' => $dadosReserva, 'idCaixa' => $pagamento['idCaixa']];
+        return [
+            'status' => 'ok',
+            'dadosReserva' => $dadosReserva,
+            'idCaixa' => $pagamento['idCaixa'],
+            'idComissao' => $pagamento['idComissao'],
+        ];
     }
     if ($contadorAdicionais > 0 && $contadorPagamento <= $contadorAdicionais) {
         $pagamento = comissaoRegistrarPagamento($pdo, $voucher, $valorUnitario, $nomeAgente);
@@ -307,7 +329,12 @@ function comissaoProcessarPagamento(PDO $pdo, string $nomeAgente, string $vouche
         );
         comissaoRegistrarFatura($pdo, $voucher, $nomeAgente, $valorUnitario, (int)$dadosReserva['cliente']);
         comissaoSalvarAnexo($pdo, $voucher);
-        return ['status' => 'ok', 'dadosReserva' => $dadosReserva, 'idCaixa' => $pagamento['idCaixa']];
+        return [
+            'status' => 'ok',
+            'dadosReserva' => $dadosReserva,
+            'idCaixa' => $pagamento['idCaixa'],
+            'idComissao' => $pagamento['idComissao'],
+        ];
     }
     logAudit(
         $pdo,
@@ -324,6 +351,56 @@ function comissaoNomeServicoPorIndice(array $dadosGerais, array $registro, array
 {
     $lista = comissaoListaServicos($dadosGerais, $registro, $listaServicos);
     return $lista[$indice]['nome'] ?? '';
+}
+function comissaoDadosAuditoria(PDO $pdo, string $voucher, string $dataagente, float $valor): array
+{
+    $audit = $pdo->prepare(
+        "SELECT description FROM ct_audit WHERE voucher = :v AND description LIKE :pat
+        AND `date` >= :inn AND `date` <= :outt ORDER BY id DESC LIMIT 1"
+    );
+    $audit->execute([
+        ':v' => $voucher,
+        ':pat' => '%comissão de R$ ' . $valor . '%',
+        ':inn' => date('Y-m-d', strtotime($dataagente)) . ' 00:00:00',
+        ':outt' => date('Y-m-d', strtotime($dataagente)) . ' 23:59:59',
+    ]);
+    $desc = (string)$audit->fetchColumn();
+    $nomeAgente = '';
+    $nomeServico = '';
+    if ($desc !== '' && preg_match('/foi paga ao agente (.+) para o serviço (.+)$/u', $desc, $m)) {
+        $nomeAgente = trim($m[1]);
+        $nomeServico = trim($m[2]);
+    }
+    return ['agente' => $nomeAgente, 'servico' => $nomeServico];
+}
+function comissaoMontarRegistroRecibo(PDO $pdo, array $comissao, string $voucher): array
+{
+    $valor = (float)$comissao['valueagente'];
+    $data = date('Y-m-d', strtotime($comissao['dataagente']));
+    $audit = comissaoDadosAuditoria($pdo, $voucher, $comissao['dataagente'], $valor);
+    $agente = $audit['agente'] !== '' ? $audit['agente'] : 'Agente';
+    $servico = $audit['servico'];
+    $desc = 'Pagamento de comissao para o voucher: ' . $voucher;
+    if ($servico !== '') {
+        $desc .= ' - ' . $servico;
+    }
+    return [
+        'id' => (int)$comissao['id'],
+        'datevencimento' => $data,
+        'datecompetencia' => $data,
+        'datepagamento' => $data,
+        'descricao' => $desc,
+        'fullname' => $agente,
+        'tipo' => '',
+        'conta' => '',
+        'plano' => '',
+        'situacao' => '',
+        'valor' => $valor,
+        'nome' => $agente,
+        'idcliente' => 8,
+        'firstname' => $_SESSION['nome'] ?? '',
+        'lastname' => '',
+    ];
 }
 function comissaoReciboMensagem(string $titulo, string $texto): string
 {
@@ -349,11 +426,10 @@ function comissaoExibirRecibo(PDO $pdo, int $idComissao, string $voucher): void
         exit;
     }
     $idCaixa = comissaoResolverIdCaixa($pdo, $idComissao);
-    if (!$idCaixa) {
-        http_response_code(404);
-        echo comissaoReciboMensagem('Recibo indisponível', 'Esta comissão ainda não possui transação vinculada no caixa.');
+    if ($idCaixa) {
+        echo comissaoReciboHtml($pdo, $idCaixa);
         exit;
     }
-    echo comissaoReciboHtml($pdo, $idCaixa);
+    echo reciboPaginaPrint(comissaoMontarRegistroRecibo($pdo, $comissao, $voucher), 'padrao');
     exit;
 }

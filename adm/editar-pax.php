@@ -346,6 +346,11 @@ if( isset($_POST['deletecredit'] ) )
 }
 if( isset($_POST['deletecomissao'] ) )
 {
+    if (!comissaoUsuarioAdmin()) {
+        setFlash('danger', 'Sem permissão para remover comissão.');
+        header('location: editar-pax?numbervoucher=' . $_POST['voucher']);
+        exit;
+    }
     comissaoExcluir($pdo, (int)$_POST['iddespesa']);
     logAudit($pdo, $_POST['voucher'], "Pagamento de comissão cancelado.");
     setFlash('danger', "COMISSÃO CANCELADA PARA O VOUCHER: {$_POST['voucher']}");
@@ -1704,8 +1709,8 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                             <th>Anexo</th>
                                                             <th>Recibo</th>
                                                             <th>#</th>
-                                                            <?php if($_SESSION['id'] == 1 or $_SESSION['id'] == 2 or $_SESSION['id'] == 30 ){ ?>
-                                                                <th>#</th>
+                                                            <?php if(comissaoUsuarioAdmin()){ ?>
+                                                                <th>Remover</th>
                                                             <?php }?>
                                                         </tr>
                                                         </thead>
@@ -1727,11 +1732,12 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                                 $listaServicos,
                                                                 $contadorservicec
                                                             );
-                                                            $reciboUrl = !empty($item->idcaixa)
-                                                                ? 'relatorio/recibo-transacao.php?idtransacao=' . (int)$item->idcaixa
-                                                                : 'relatorio/pdf-relatorio-comissao-agente.php?recibo=1&id='
+                                                            $reciboUrl = 'relatorio/pdf-relatorio-comissao-agente.php?recibo=1&id='
                                                                 . (int)$item->id . '&voucher='
                                                                 . rawurlencode($dadosGerais['numbervoucher']);
+                                                            if (!empty($item->idcaixa)) {
+                                                                $reciboUrl = 'relatorio/recibo-transacao.php?idtransacao=' . (int)$item->idcaixa;
+                                                            }
                                                             ?>
                                                             <tr>
                                                                 <td><?php echo date("d/m/Y", strtotime($item->dataagente)); ?></td>
@@ -1772,30 +1778,18 @@ if( isset($_POST['excluirCadFatura']) ) {
                                                                 </td>
                                                                 <td>
                                                                     <a href="<?= htmlspecialchars($reciboUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank"
-                                                                        class="btn btn-sm btn-outline-info" title="Visualizar recibo">
-                                                                        <i class="fas fa-file-invoice"></i>
+                                                                        class="btn btn-sm btn-outline-info action-icon-button" title="Visualizar recibo">
+                                                                        <svg><use href="#icon-print"></use></svg><span>Recibo</span>
                                                                     </a>
                                                                 </td>
                                                                 <td>
                                                                     <button style="margin-bottom: 15px;" type="submit" name="updatedes"
                                                                             class="btn btn-success btn-block"><svg><use href="#icon-refresh"></use></svg><span>Atualizar Valor</span></button>
                                                                 </td>
-                                                                <?php if($_SESSION['id'] == 1 or $_SESSION['id'] == 2 or $_SESSION['id'] == 30 ){ ?>
+                                                                <?php if(comissaoUsuarioAdmin()){ ?>
                                                                     <td>
-                                                                        <?php if( !empty($_SESSION['idoperador']) or !empty($_SESSION['idreservamanager'])
-                                                                            or !empty($_SESSION['idreservaplus'])){ ?>
-                                                                            <?php if( $dadosGerais['idstatusinvoice'] >= 3 and $dadosGerais['idstatusinvoice'] <= 5
-                                                                                and $_SESSION['id'] <> 46 and $_SESSION['id'] <> 32 and $_SESSION['id'] != 57 ){ ?>
-                                                                                <button  type="button" class="btn btn-success disabled ">
-                                                                                    <svg><use href="#icon-check"></use></svg><span>Não é possivel cancelar a comissão</span></button>
-                                                                            <?php }else{ ?>
-                                                                                <button style="margin-bottom: 15px;" type="submit" name="deletecomissao"
-                                                                                        class="btn btn-warning btn-block"><svg><use href="#icon-trash"></use></svg><span>Cancelar Pagamento</span></button>
-                                                                            <?php }?>
-                                                                        <?php } else{ ?>
-                                                                            <button style="margin-bottom: 15px;" type="submit" name="deletecomissao"
-                                                                                    class="btn btn-warning btn-block"><svg><use href="#icon-trash"></use></svg><span>Cancelar Pagamento</span></button>
-                                                                        <?php }?>
+                                                                        <button style="margin-bottom: 15px;" type="submit" name="deletecomissao"
+                                                                            class="btn btn-warning btn-block"><svg><use href="#icon-trash"></use></svg><span>Remover</span></button>
                                                                     </td>
                                                                 <?php }?>
                                                             </tr>
