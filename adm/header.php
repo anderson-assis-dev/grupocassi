@@ -179,6 +179,11 @@ ob_start();
             background: #f0f0f0;
             margin: 4px 0;
         }
+        .cassi-user-dropdown .ud-cache { color: #6b7280; }
+        .cassi-user-dropdown .ud-cache i { color: #9ca3af; }
+        .cassi-user-dropdown .ud-cache:hover { background: #f3f4f6; color: #1e4770; }
+        .cassi-user-dropdown .ud-cache:hover i { color: #1e4770; }
+
         .cassi-user-dropdown .ud-sair {
             color: #dc2626;
             margin-bottom: 2px;
@@ -299,6 +304,11 @@ ob_start();
                     </a>
                     <a class="dropdown-item" href="./perfil">
                         <i class="fas fa-user"></i> Perfil
+                    </a>
+                    <div class="ud-divider"></div>
+                    <a class="dropdown-item ud-cache" href="./limpar-cache"
+                       onclick="return confirm('Limpar o cache de referência?\nOs dados serão recarregados do banco na próxima consulta.')">
+                        <i class="fas fa-sync-alt"></i> Limpar Cache
                     </a>
                     <div class="ud-divider"></div>
                     <a class="dropdown-item ud-sair" href="./sair">
