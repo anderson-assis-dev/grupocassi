@@ -75,7 +75,8 @@ if ($tipo === 0) {
 $selectCols = "SELECT c.datevencimento AS vencimento, c.descricao,
                       cc.name AS conta, cli.fullname AS favorecido,
                       c.idcliente, c.valor, c.idtipo, c.idstatus,
-                      s.nameinvoice, c.nome, em.fullname AS empresa";
+                      s.nameinvoice, c.nome, em.fullname AS empresa,
+                      cli.nomebanco, cli.agencia, cli.numeroconta, cli.tipoconta, cli.chavepix";
 $stmt = $pdo->prepare("$selectCols $joins $wSql ORDER BY cli.fullname, c.datevencimento");
 $stmt->execute($params);
 // PDO buffered=false para não duplicar resultado em memória
@@ -244,7 +245,25 @@ tbody tr:hover td { background: #f0f6ff; }
                     $groupTotal    = 0.0;
                     ?>
                     <tr class="group-header">
-                        <td colspan="6">&#128100; <?= esc($groupName) ?></td>
+                        <td colspan="6">
+                            &#128100; <?= esc($groupName) ?>
+                            <?php
+                            $banco   = trim($r->nomebanco   ?? '');
+                            $agencia = trim($r->agencia     ?? '');
+                            $conta   = trim($r->numeroconta ?? '');
+                            $tipo    = trim($r->tipoconta   ?? '');
+                            $pix     = trim($r->chavepix    ?? '');
+                            $bankParts = [];
+                            if ($banco   !== '') { $bankParts[] = '<strong>Banco:</strong> ' . esc($banco); }
+                            if ($agencia !== '') { $bankParts[] = '<strong>Ag:</strong> '    . esc($agencia); }
+                            if ($conta   !== '') { $bankParts[] = '<strong>Conta' . ($tipo !== '' ? " ($tipo)" : '') . ':</strong> ' . esc($conta); }
+                            if ($pix     !== '') { $bankParts[] = '<strong>Pix:</strong> '   . esc($pix); }
+                            if ($bankParts): ?>
+                            <span style="font-size:10px;font-weight:400;color:#2a5f96;margin-left:12px;">
+                                &#127974; <?= implode(' &nbsp;|&nbsp; ', $bankParts) ?>
+                            </span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endif;
                 $groupTotal  += (float)$r->valor;

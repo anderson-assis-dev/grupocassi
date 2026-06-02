@@ -163,11 +163,11 @@ $total    = count($registros);
 .results-header { padding: 16px 22px 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .results-title { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
 .results-count { font-size: 11px; background: var(--navy); color: #fff; padding: 2px 9px; border-radius: 20px; font-weight: 600; }
-#cli-table { font-size: 12.5px; }
-#cli-table thead th { background: var(--navy); color: #fff; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border: none; padding: 9px 8px; white-space: nowrap; }
-#cli-table tbody tr { transition: background .12s; }
-#cli-table tbody tr:hover td { background: #f0f6ff !important; }
-#cli-table tbody td { padding: 7px 8px; vertical-align: middle; border-color: #f0f0f0; }
+#cli-table, #fav-table { font-size: 12.5px; }
+#cli-table thead th, #fav-table thead th { background: var(--navy); color: #fff; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border: none; padding: 9px 8px; white-space: nowrap; }
+#cli-table tbody tr, #fav-table tbody tr { transition: background .12s; }
+#cli-table tbody tr:hover td, #fav-table tbody tr:hover td { background: #f0f6ff !important; }
+#cli-table tbody td, #fav-table tbody td { padding: 7px 8px; vertical-align: middle; border-color: #f0f0f0; }
 .cli-nome-cell { font-weight: 600; }
 .btn-tbl-edit { background: var(--navy); color: #fff; border: none; border-radius: 6px; padding: 4px 11px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .btn-tbl-edit:hover { background: var(--navy-lt); color: #fff; text-decoration: none; }

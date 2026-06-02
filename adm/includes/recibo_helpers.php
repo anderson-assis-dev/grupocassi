@@ -67,11 +67,13 @@ function reciboTipo(array $registro): string
 }
 function reciboCarregar(PDO $pdo, array $input): ?array
 {
+    $bankCols = "forne.nomebanco, forne.agencia, forne.numeroconta, forne.tipoconta, forne.chavepix";
+
     if (!empty($input['segundavia'])) {
         $st = $pdo->prepare(
             "SELECT c.id,c.datevencimento,c.datecompetencia,c.datepagamento,c.descricao,forne.fullname,
             tc.name AS tipo,cc.name AS conta,p.name AS plano,s.nameinvoice AS situacao,c.valor,c.nome,
-            c.idcliente,u.firstname,u.lastname
+            c.idcliente,u.firstname,u.lastname, $bankCols
             FROM ct_caixa c
             LEFT JOIN ct_fornecedor forne ON forne.id = c.idcliente
             LEFT JOIN ct_tipocaixa tc ON tc.id = c.idtipo
@@ -93,7 +95,7 @@ function reciboCarregar(PDO $pdo, array $input): ?array
         $st = $pdo->prepare(
             "SELECT c.id,c.datevencimento,c.datecompetencia,c.datepagamento,c.descricao,forne.fullname,
             tc.name AS tipo,cc.name AS conta,p.name AS plano,s.nameinvoice AS situacao,c.valor,c.nome,
-            c.idcliente,u.firstname,u.lastname
+            c.idcliente,u.firstname,u.lastname, $bankCols
             FROM ct_caixa c
             LEFT JOIN ct_fornecedor forne ON forne.id = c.idcliente
             LEFT JOIN ct_tipocaixa tc ON tc.id = c.idtipo
@@ -132,6 +134,8 @@ function reciboStyles(): string
     .recibo-campo label{color:#64748b;display:block;font-size:10px;font-weight:700;margin-bottom:6px;text-transform:uppercase}
     .recibo-linha{border-bottom:1px solid #cbd5e1;height:22px;margin-top:4px}
     .recibo-local{font-size:13px;margin:36px 0 18px}
+    .recibo-banco{background:#f0f6ff;border:1px solid #c3d9f5;border-left:4px solid #1e4770;border-radius:8px;color:#1f2937;font-size:12px;line-height:1.7;margin:18px 0 0;padding:12px 16px}
+    .recibo-banco-titulo{color:#1e4770;font-size:10px;font-weight:700;letter-spacing:.06em;margin-bottom:6px;text-transform:uppercase}
     .recibo-assinatura{margin-top:48px;text-align:center}
     .recibo-assinatura-linha{border-top:1px solid #1f2937;margin:0 auto 10px;width:80%}
     .recibo-assinatura-nome{font-size:13px;font-weight:700}
@@ -174,6 +178,32 @@ function reciboMeta(array $r): string
 function reciboAssinatura(array $r): string
 {
     return '<div class="recibo-assinatura"><div class="recibo-assinatura-linha"></div><div class="recibo-assinatura-nome">' . reciboEsc($r['nome'] ?? '') . '</div></div>';
+}
+function reciboDadosBancarios(array $r): string
+{
+    $banco    = trim($r['nomebanco']   ?? '');
+    $agencia  = trim($r['agencia']     ?? '');
+    $conta    = trim($r['numeroconta'] ?? '');
+    $tipo     = trim($r['tipoconta']   ?? '');
+    $pix      = trim($r['chavepix']    ?? '');
+
+    if ($banco === '' && $agencia === '' && $conta === '' && $pix === '') {
+        return '';
+    }
+
+    $linhas = [];
+    if ($banco   !== '') $linhas[] = '<strong>Banco:</strong> ' . reciboEsc($banco);
+    if ($agencia !== '') $linhas[] = '<strong>Agência:</strong> ' . reciboEsc($agencia);
+    if ($conta   !== '') {
+        $label = $tipo !== '' ? "Conta $tipo" : 'Conta';
+        $linhas[] = "<strong>$label:</strong> " . reciboEsc($conta);
+    }
+    if ($pix !== '') $linhas[] = '<strong>Chave Pix:</strong> ' . reciboEsc($pix);
+
+    return '<div class="recibo-banco">'
+        . '<div class="recibo-banco-titulo">&#127974; Dados Bancários para Pagamento</div>'
+        . implode(' &nbsp;|&nbsp; ', $linhas)
+        . '</div>';
 }
 function reciboConteudo(array $r, string $tipo): string
 {
@@ -224,6 +254,7 @@ function reciboConteudo(array $r, string $tipo): string
         . '<div class="recibo-head"><div class="recibo-title">RECIBO Nº ' . $id . '</div>' . reciboMeta($r) . '</div>'
         . '<div class="recibo-body">Recebi da <strong>CASSI TURISMO</strong> a importância de <strong>R$ ' . $valor . '</strong>, referente a ' . $descricao . '.</div>'
         . '<div class="recibo-local">Salvador, ' . $dataVenc . '</div>'
+        . reciboDadosBancarios($r)
         . reciboAssinatura($r) . '</div>';
 }
 function reciboPaginaPrint(array $r, string $tipo): string
