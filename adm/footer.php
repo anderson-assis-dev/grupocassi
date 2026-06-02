@@ -83,7 +83,7 @@
             $('#calculadora').text("Valor total da reserva R$ " + total);
         });
         $('#exemplomodal').modal('show');
-        $('.modal').modal('show');
+        $('.modal:not(.cassi-modal)').modal('show');
         $("#cadastrarvolta").click(function () {
             if( $("#cadastrarvolta").is(':checked') ){
                 $("#adicionais").show();

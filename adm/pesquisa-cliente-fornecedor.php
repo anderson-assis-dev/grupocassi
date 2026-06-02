@@ -63,9 +63,86 @@ if (isset($_POST['novocliente'])) {
     exit;
 }
 
+// ── Aba ativa ─────────────────────────────────────────────────────────────────
+$tab = in_array($_GET['tab'] ?? '', ['favorecido']) ? $_GET['tab'] : 'clientes';
+
+// ── Colunas reais de ct_fornecedor (detectadas em tempo de execução) ──────────
+$favColsMap = array_flip(array_column(
+    $pdo->query("SHOW COLUMNS FROM ct_fornecedor")->fetchAll(PDO::FETCH_ASSOC),
+    'Field'
+));
+
+function favBuildFields(array $colsMap, array $postMap): array {
+    $fields = []; $vals = [];
+    foreach ($postMap as $col => $val) {
+        if (isset($colsMap[$col])) {
+            $fields[] = $col;
+            $vals[":$col"] = $val;
+        }
+    }
+    return [$fields, $vals];
+}
+
+// ── Novo Favorecido ───────────────────────────────────────────────────────────
+if (isset($_POST['novo_favorecido'])) {
+    $fnome = strtoupper(trim($_POST['fav_nome'] ?? ''));
+    if ($fnome === '') {
+        setFlash('danger', 'Informe o nome do favorecido.');
+    } else {
+        [$fields, $vals] = favBuildFields($favColsMap, [
+            'fullname'    => $fnome,
+            'cnpj'        => trim($_POST['fav_cnpj']      ?? ''),
+            'phone'       => trim($_POST['fav_phone']     ?? ''),
+            'email'       => trim($_POST['fav_email']     ?? ''),
+            'nomebanco'   => trim($_POST['fav_banco']     ?? ''),
+            'agencia'     => trim($_POST['fav_agencia']   ?? ''),
+            'numeroconta' => trim($_POST['fav_conta']     ?? ''),
+            'tipoconta'   => trim($_POST['fav_tipoconta'] ?? ''),
+            'chavepix'    => trim($_POST['fav_pix']       ?? ''),
+        ]);
+        $cols = implode(',', $fields);
+        $ph   = implode(',', array_map(fn($c) => ":$c", $fields));
+        $pdo->prepare("INSERT INTO ct_fornecedor ($cols) VALUES ($ph)")->execute($vals);
+        refCacheFlush('fornecedores');
+        setFlash('success', 'Favorecido cadastrado com sucesso.');
+    }
+    header('location: pesquisa-cliente-fornecedor?tab=favorecido');
+    exit;
+}
+
+// ── Editar Favorecido ─────────────────────────────────────────────────────────
+if (isset($_POST['editar_favorecido'])) {
+    $eid = (int)($_POST['fav_id'] ?? 0);
+    if ($eid > 0) {
+        [$fields, $vals] = favBuildFields($favColsMap, [
+            'fullname'    => strtoupper(trim($_POST['fav_nome']      ?? '')),
+            'cnpj'        => trim($_POST['fav_cnpj']      ?? ''),
+            'phone'       => trim($_POST['fav_phone']     ?? ''),
+            'email'       => trim($_POST['fav_email']     ?? ''),
+            'nomebanco'   => trim($_POST['fav_banco']     ?? ''),
+            'agencia'     => trim($_POST['fav_agencia']   ?? ''),
+            'numeroconta' => trim($_POST['fav_conta']     ?? ''),
+            'tipoconta'   => trim($_POST['fav_tipoconta'] ?? ''),
+            'chavepix'    => trim($_POST['fav_pix']       ?? ''),
+        ]);
+        $sets = implode(', ', array_map(fn($c) => "$c = :$c", $fields));
+        $vals[':id'] = $eid;
+        $pdo->prepare("UPDATE ct_fornecedor SET $sets WHERE id = :id")->execute($vals);
+        refCacheFlush('fornecedores');
+        setFlash('success', 'Favorecido atualizado com sucesso.');
+    }
+    header('location: pesquisa-cliente-fornecedor?tab=favorecido');
+    exit;
+}
+
 // ── Listagem ──────────────────────────────────────────────────────────────────
-$clientes = refClientes($pdo);
-$total    = count($clientes);
+if ($tab === 'favorecido') {
+    $registros = refFornecedores($pdo);
+} else {
+    $registros = refClientes($pdo);
+}
+$clientes = $registros; // compatibilidade com código abaixo
+$total    = count($registros);
 ?>
 <style>
 :root { --navy: #1e4770; --navy-lt: #2a5f96; }
@@ -121,20 +198,45 @@ $total    = count($clientes);
     </div>
     <?php endif; ?>
 
+    <!-- Abas -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+        <a href="pesquisa-cliente-fornecedor"
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:all .18s;
+                  <?= $tab !== 'favorecido' ? 'background:var(--navy);color:#fff;' : 'background:#f0f4f8;color:var(--navy);border:1.5px solid #d0dcea;' ?>">
+            <i class="fas fa-users"></i> Clientes
+        </a>
+        <a href="pesquisa-cliente-fornecedor?tab=favorecido"
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:all .18s;
+                  <?= $tab === 'favorecido' ? 'background:var(--navy);color:#fff;' : 'background:#f0f4f8;color:var(--navy);border:1.5px solid #d0dcea;' ?>">
+            <i class="fas fa-hand-holding-usd"></i> Favorecidos
+        </a>
+    </div>
+
     <div class="filter-card">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
             <div>
+                <?php if ($tab === 'favorecido'): ?>
+                <div class="fc-title"><i class="fas fa-hand-holding-usd"></i> Favorecidos</div>
+                <div class="fc-sub">Beneficiários de pagamentos (ct_fornecedor)</div>
+                <?php else: ?>
                 <div class="fc-title"><i class="fas fa-users"></i> Clientes / Fornecedores</div>
                 <div class="fc-sub">Cadastro e gestão de clientes e fornecedores</div>
+                <?php endif; ?>
             </div>
             <div style="display:flex;align-items:center;gap:16px;">
                 <div class="cli-kpi">
                     <div class="cli-kpi-label">Total</div>
                     <div class="cli-kpi-value"><?= $total ?></div>
                 </div>
+                <?php if ($tab === 'favorecido'): ?>
+                <button type="button" class="btn-novo" onclick="$('#modalFavorecido').modal('show')">
+                    <i class="fas fa-plus"></i> Novo Favorecido
+                </button>
+                <?php else: ?>
                 <button type="button" class="btn-novo" onclick="$('#modalCliente').modal('show')">
                     <i class="fas fa-plus"></i> Novo Cadastro
                 </button>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -142,11 +244,55 @@ $total    = count($clientes);
     <div class="results-card">
         <div class="results-header">
             <div class="results-title">
-                <i class="fas fa-list"></i> Cadastros
+                <i class="fas fa-list"></i> <?= $tab === 'favorecido' ? 'Favorecidos' : 'Cadastros' ?>
                 <span class="results-count"><?= $total ?></span>
             </div>
         </div>
         <div class="table-responsive">
+            <?php if ($tab === 'favorecido'): ?>
+            <table id="fav-table" class="table table-bordered" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Nº</th>
+                        <th>Nome</th>
+                        <th>CPF / CNPJ</th>
+                        <th>Telefone</th>
+                        <th>E-mail</th>
+                        <th>Banco</th>
+                        <th>Chave Pix</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($registros as $f): ?>
+                <tr>
+                    <td><?= (int)$f->id ?></td>
+                    <td class="cli-nome-cell"><?= cliEsc($f->fullname) ?></td>
+                    <td><?= cliEsc($f->cnpj ?? '') ?></td>
+                    <td><?= cliEsc($f->phone ?? '') ?></td>
+                    <td><?= cliEsc($f->email ?? '') ?></td>
+                    <td><?= cliEsc($f->nomebanco ?? '') ?></td>
+                    <td><?= cliEsc($f->chavepix ?? '') ?></td>
+                    <td style="white-space:nowrap;">
+                        <button type="button" class="btn-tbl-edit btn-fav-edit"
+                            data-id="<?= (int)$f->id ?>"
+                            data-nome="<?= cliEsc($f->fullname) ?>"
+                            data-cnpj="<?= cliEsc($f->cnpj ?? '') ?>"
+                            data-phone="<?= cliEsc($f->phone ?? '') ?>"
+                            data-email="<?= cliEsc($f->email ?? '') ?>"
+                            data-banco="<?= cliEsc($f->nomebanco ?? '') ?>"
+                            data-agencia="<?= cliEsc($f->agencia ?? '') ?>"
+                            data-conta="<?= cliEsc($f->numeroconta ?? '') ?>"
+                            data-tipoconta="<?= cliEsc($f->tipoconta ?? '') ?>"
+                            data-pix="<?= cliEsc($f->chavepix ?? '') ?>">
+                            <i class="fas fa-edit"></i> Editar
+                        </button>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php else: ?>
             <table id="cli-table" class="table table-bordered" style="width:100%">
                 <thead>
                     <tr>
@@ -179,6 +325,7 @@ $total    = count($clientes);
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -186,7 +333,7 @@ $total    = count($clientes);
 </div>
 
 <!-- Modal Novo Cliente / Fornecedor -->
-<div class="modal fade" id="modalCliente" tabindex="-1" role="dialog" aria-labelledby="modalCliTitle" aria-hidden="true">
+<div class="modal cassi-modal fade" id="modalCliente" tabindex="-1" role="dialog" aria-labelledby="modalCliTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
         <div class="modal-content">
             <div class="modal-header">
@@ -276,26 +423,209 @@ $total    = count($clientes);
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    if (window.jQuery && jQuery.fn.DataTable && document.getElementById('cli-table')) {
-        jQuery('#cli-table').DataTable({
-            dom: '<"d-flex justify-content-between align-items-center mb-2"Bf>rtip',
-            buttons: [
-                { extend: 'excelHtml5', text: '<i class="fas fa-file-excel"></i> Excel',  className: 'btn btn-sm btn-success mr-1' },
-                { extend: 'csvHtml5',   text: '<i class="fas fa-file-csv"></i> CSV',      className: 'btn btn-sm btn-secondary mr-1' },
-                { extend: 'copyHtml5',  text: '<i class="fas fa-copy"></i> Copiar',       className: 'btn btn-sm btn-dark mr-1' },
-            ],
-            pageLength: 50,
-            order: [[1, 'asc']],
-            language: {
-                search:      'Buscar:',
-                lengthMenu:  'Exibir _MENU_ por página',
-                info:        '_START_–_END_ de _TOTAL_',
-                paginate:    { first: '«', last: '»', next: '›', previous: '‹' },
-                zeroRecords: 'Nenhum cadastro encontrado',
-                infoEmpty:   'Sem registros',
-            },
+    if (!window.jQuery || !jQuery.fn.DataTable) return;
+
+    var dtOptions = {
+        dom: '<"d-flex justify-content-between align-items-center mb-2"Bf>rtip',
+        buttons: [
+            { extend: 'excelHtml5', text: '<i class="fas fa-file-excel"></i> Excel',  className: 'btn btn-sm btn-success mr-1' },
+            { extend: 'csvHtml5',   text: '<i class="fas fa-file-csv"></i> CSV',      className: 'btn btn-sm btn-secondary mr-1' },
+            { extend: 'copyHtml5',  text: '<i class="fas fa-copy"></i> Copiar',       className: 'btn btn-sm btn-dark mr-1' },
+        ],
+        pageLength: 50,
+        order: [[1, 'asc']],
+        language: {
+            search:      'Buscar:',
+            lengthMenu:  'Exibir _MENU_ por página',
+            info:        '_START_–_END_ de _TOTAL_',
+            paginate:    { first: '«', last: '»', next: '›', previous: '‹' },
+            zeroRecords: 'Nenhum cadastro encontrado',
+            infoEmpty:   'Sem registros',
+        },
+    };
+
+    if (document.getElementById('fav-table')) {
+        jQuery('#fav-table').DataTable(dtOptions);
+    } else if (document.getElementById('cli-table')) {
+        jQuery('#cli-table').DataTable(Object.assign({}, dtOptions, {
             columnDefs: [{ orderable: false, targets: [7] }],
-        });
+        }));
+    }
+});
+</script>
+
+<!-- Modal Novo Favorecido -->
+<div class="modal cassi-modal fade" id="modalFavorecido" tabindex="-1" role="dialog" aria-labelledby="modalFavTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalFavTitle">
+                    <i class="fas fa-hand-holding-usd"></i> Novo Favorecido
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Fechar"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <form action="pesquisa-cliente-fornecedor?tab=favorecido" method="post">
+                <div class="modal-body">
+                    <div class="modal-grid">
+                        <div class="full">
+                            <label class="modal-label" for="n-nome">Nome <span style="color:#dc3545">*</span></label>
+                            <input type="text" name="fav_nome" id="n-nome" class="form-control" required placeholder="Ex: EMPRESA XYZ LTDA">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="n-cnpj">CPF / CNPJ</label>
+                            <input type="text" name="fav_cnpj" id="n-cnpj" class="form-control" placeholder="00.000.000/0001-00">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="n-phone">Telefone</label>
+                            <input type="text" name="fav_phone" id="n-phone" class="form-control" placeholder="(71) 99999-9999">
+                        </div>
+                        <div class="full">
+                            <label class="modal-label" for="n-email">E-mail</label>
+                            <input type="email" name="fav_email" id="n-email" class="form-control" placeholder="contato@empresa.com">
+                        </div>
+                        <div style="grid-column:1/-1; border-top:1px solid #e9ecef; padding-top:12px; margin-top:4px;">
+                            <p style="font-size:11px;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">
+                                <i class="fas fa-university" style="color:var(--navy);"></i> Dados Bancários
+                            </p>
+                        </div>
+                        <div>
+                            <label class="modal-label" for="n-banco">Banco</label>
+                            <input type="text" name="fav_banco" id="n-banco" class="form-control" placeholder="Nome do banco">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="n-agencia">Agência</label>
+                            <input type="text" name="fav_agencia" id="n-agencia" class="form-control" placeholder="0000-0">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="n-conta">Número da Conta</label>
+                            <input type="text" name="fav_conta" id="n-conta" class="form-control" placeholder="00000-0">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="n-tipoconta">Tipo de Conta</label>
+                            <select name="fav_tipoconta" id="n-tipoconta" class="form-control">
+                                <option value="">Selecione</option>
+                                <option value="Corrente">Corrente</option>
+                                <option value="Poupança">Poupança</option>
+                                <option value="Pagamento">Pagamento</option>
+                            </select>
+                        </div>
+                        <div class="full">
+                            <label class="modal-label" for="n-pix">Chave Pix</label>
+                            <input type="text" name="fav_pix" id="n-pix" class="form-control" placeholder="CPF, e-mail, telefone ou chave aleatória">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+                    <button type="submit" name="novo_favorecido" class="btn btn-success">
+                        <i class="fas fa-save"></i> Cadastrar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Editar Favorecido -->
+<div class="modal cassi-modal fade" id="modalEditarFavorecido" tabindex="-1" role="dialog" aria-labelledby="modalEditFavTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalEditFavTitle">
+                    <i class="fas fa-edit"></i> Editar Favorecido
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Fechar"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <form action="pesquisa-cliente-fornecedor?tab=favorecido" method="post">
+                <input type="hidden" name="fav_id" id="edit-fav-id">
+                <div class="modal-body">
+                    <div class="modal-grid">
+                        <div class="full">
+                            <label class="modal-label" for="edit-fav-nome">Nome <span style="color:#dc3545">*</span></label>
+                            <input type="text" name="fav_nome" id="edit-fav-nome" class="form-control" required>
+                        </div>
+                        <div>
+                            <label class="modal-label" for="edit-fav-cnpj">CPF / CNPJ</label>
+                            <input type="text" name="fav_cnpj" id="edit-fav-cnpj" class="form-control">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="edit-fav-phone">Telefone</label>
+                            <input type="text" name="fav_phone" id="edit-fav-phone" class="form-control">
+                        </div>
+                        <div class="full">
+                            <label class="modal-label" for="edit-fav-email">E-mail</label>
+                            <input type="email" name="fav_email" id="edit-fav-email" class="form-control">
+                        </div>
+                        <div style="grid-column:1/-1; border-top:1px solid #e9ecef; padding-top:12px; margin-top:4px;">
+                            <p style="font-size:11px;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">
+                                <i class="fas fa-university" style="color:var(--navy);"></i> Dados Bancários
+                            </p>
+                        </div>
+                        <div>
+                            <label class="modal-label" for="edit-fav-banco">Banco</label>
+                            <input type="text" name="fav_banco" id="edit-fav-banco" class="form-control">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="edit-fav-agencia">Agência</label>
+                            <input type="text" name="fav_agencia" id="edit-fav-agencia" class="form-control">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="edit-fav-conta">Número da Conta</label>
+                            <input type="text" name="fav_conta" id="edit-fav-conta" class="form-control">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="edit-fav-tipoconta">Tipo de Conta</label>
+                            <select name="fav_tipoconta" id="edit-fav-tipoconta" class="form-control">
+                                <option value="">Selecione</option>
+                                <option value="Corrente">Corrente</option>
+                                <option value="Poupança">Poupança</option>
+                                <option value="Pagamento">Pagamento</option>
+                            </select>
+                        </div>
+                        <div class="full">
+                            <label class="modal-label" for="edit-fav-pix">Chave Pix</label>
+                            <input type="text" name="fav_pix" id="edit-fav-pix" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+                    <button type="submit" name="editar_favorecido" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Salvar Alterações
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Botão Editar Favorecido ───────────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.btn-fav-edit');
+    if (!btn) return;
+    var d = btn.dataset;
+    document.getElementById('edit-fav-id').value       = d.id;
+    document.getElementById('edit-fav-nome').value     = d.nome;
+    document.getElementById('edit-fav-cnpj').value     = d.cnpj;
+    document.getElementById('edit-fav-phone').value    = d.phone;
+    document.getElementById('edit-fav-email').value    = d.email;
+    document.getElementById('edit-fav-banco').value    = d.banco;
+    document.getElementById('edit-fav-agencia').value  = d.agencia;
+    document.getElementById('edit-fav-conta').value    = d.conta;
+    document.getElementById('edit-fav-pix').value      = d.pix;
+    var sel = document.getElementById('edit-fav-tipoconta');
+    for (var i = 0; i < sel.options.length; i++) {
+        sel.options[i].selected = (sel.options[i].value === d.tipoconta);
+    }
+    if (window.jQuery) jQuery('#modalEditarFavorecido').modal('show');
+});
+
+// ── Fix: footer.php tem $('.modal').modal('show') que abre todas as modais ─────
+// window.load dispara APÓS os handlers $(document).ready do footer, cancelando o auto-show.
+window.addEventListener('load', function() {
+    if (window.jQuery) {
+        jQuery('.cassi-modal').modal('hide');
     }
 });
 </script>
